@@ -85,7 +85,7 @@ export function createApp(store: GameStore): AppBundle {
   });
 
   app.get('/api/games/:id', (req, res) => {
-    res.json({ game: store.getPublic(String(req.params.id)) });
+    res.json({ game: store.getPublic(req.params.id) });
   });
 
   app.post('/api/games', (req, res) => {
@@ -98,30 +98,30 @@ export function createApp(store: GameStore): AppBundle {
 
   app.post('/api/games/:id/join', (req, res) => {
     const body = parseBody(joinSeatSchema, req.body);
-    const joined = store.join(String(req.params.id), body.seat, body.name, 'human');
+    const joined = store.join(req.params.id, body.seat, body.name, 'human');
     res.json(joined);
   });
 
   app.post('/api/games/:id/moves', (req, res) => {
     const body = parseBody(moveSchema, req.body);
-    const game = store.move(String(req.params.id), body.move, body.token);
+    const game = store.move(req.params.id, body.move, body.token);
     res.json({ game });
   });
 
   app.post('/api/games/:id/draw', (req, res) => {
     const body = parseBody(drawSchema, req.body);
-    const game = store.draw(String(req.params.id), body.action, body.token, body.seat);
+    const game = store.draw(req.params.id, body.action, body.token, body.seat);
     res.json({ game });
   });
 
   app.post('/api/games/:id/resign', (req, res) => {
     const body = parseBody(resignSchema, req.body);
-    const game = store.resign(String(req.params.id), body.token, body.seat);
+    const game = store.resign(req.params.id, body.token, body.seat);
     res.json({ game });
   });
 
   app.delete('/api/games/:id', (req, res) => {
-    store.delete(String(req.params.id));
+    store.delete(req.params.id);
     res.json({ ok: true });
   });
 

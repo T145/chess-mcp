@@ -203,10 +203,17 @@ Linting is enforced with [Oxlint](https://oxc.rs/docs/guide/usage/linter/).
 - TypeScript, React, JSX accessibility, import, promise, node, Vitest, unicorn,
   and Oxc plugins are enabled.
 - Selected additional rules are errors: `eqeqeq`, `prefer-const`, `no-var`,
-  `typescript/no-explicit-any`, `typescript/consistent-type-imports`,
-  `import/no-cycle`, `import/no-duplicates`, `unicorn/prefer-node-protocol`,
+  `typescript/no-explicit-any`, `typescript/no-non-null-assertion`,
+  `typescript/consistent-type-imports`, `import/no-cycle`,
+  `import/no-duplicates`, `unicorn/prefer-node-protocol`,
   `react/self-closing-comp`, and more.
+- **Type-aware linting** is enabled through `oxlint-tsgolint` (`--type-aware`).
+  It catches unsafe type assertions, unnecessary conversions/assertions, unbound
+  methods, and misused spreads in the server, tests, and `.tsx` components.
 - `console` is banned in the web app; server/test logging is explicitly allowed.
+- Test fixtures relax only `no-non-null-assertion`, `no-unsafe-type-assertion`,
+  and `no-unnecessary-type-parameters` because they intentionally decode JSON
+  fixtures.
 - The noisy `pedantic` and `style` categories (`sort-keys`, `one-var`,
   `jsx-max-depth`, `no-magic-numbers`, etc.) stay off by design; high-signal
   rules from those categories are enabled individually.
@@ -222,7 +229,8 @@ applies safe fixes on request. Changes are checked by
 
 The repository ships with:
 
-- Oxlint: **0 warnings, 0 errors** with the strict categories and curated rules.
+- Oxlint with type-aware rules: **0 warnings, 0 errors** across 32 files and
+  287 rules.
 - TypeScript: server, web, and test configs all clean.
 - Rules tests: Fool's mate, castling, en passant, promotion, draws,
   resignation, illegal moves, PGN and ASCII output.

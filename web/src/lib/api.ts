@@ -9,12 +9,14 @@ import type {
 } from '../../../src/shared/protocol';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers = new Headers(init?.headers);
+  if (init?.body && !headers.has('Content-Type')) {
+    headers.set('Content-Type', 'application/json');
+  }
+
   const response = await fetch(path, {
     ...init,
-    headers: {
-      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-      ...init?.headers
-    }
+    headers
   });
 
   const text = await response.text();
@@ -30,11 +32,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!response.ok) {
     const message =
       data && typeof data === 'object' && 'error' in data
-        ? String((data as { error: unknown }).error)
+        ? String(data.error)
         : `Request failed (${response.status})`;
     throw new Error(message);
   }
 
+  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- responses are produced by this app's own typed API
   return data as T;
 }
 

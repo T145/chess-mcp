@@ -1,4 +1,4 @@
-import { Chess } from 'chess.js';
+import { Chess, SQUARES } from 'chess.js';
 import type { Color as ChessColor, Move, PieceSymbol, Square } from 'chess.js';
 
 import { UserError } from './errors.js';
@@ -26,6 +26,11 @@ export interface GameInit {
 }
 
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
+const SQUARE_SET = new Set<string>(SQUARES);
+
+function isSquare(value: string): value is Square {
+  return SQUARE_SET.has(value);
+}
 
 export function opposite(color: Color): Color {
   return color === 'white' ? 'black' : 'white';
@@ -46,26 +51,30 @@ function promotionSymbol(value: string | undefined): PieceSymbol | undefined {
 
 function parseMoveInput(chess: Chess, input: MoveInput): Move {
   if (typeof input === 'object' && input !== null) {
-    const from = String(input.from);
-    const to = String(input.to);
-    if (!from || !to) {
-      throw new UserError('A move object needs both "from" and "to" squares.');
+    const { from, to } = input;
+    if (!isSquare(from) || !isSquare(to)) {
+      throw new UserError('A move object needs valid "from" and "to" squares.');
     }
     return chess.move({
-      from: from as Square,
-      to: to as Square,
+      from,
+      to,
       promotion: promotionSymbol(input.promotion)
     });
   }
 
-  const text = String(input).trim();
+  const text = input.trim();
   if (!text) throw new UserError('Move is empty.');
 
   const uci = /^([a-h][1-8])[\s-]?([a-h][1-8])([qrbnQRBN])?$/.exec(text);
   if (uci) {
+    const from = uci[1];
+    const to = uci[2];
+    if (!from || !to || !isSquare(from) || !isSquare(to)) {
+      throw new UserError('UCI move needs valid "from" and "to" squares.');
+    }
     return chess.move({
-      from: uci[1] as Square,
-      to: uci[2] as Square,
+      from,
+      to,
       promotion: promotionSymbol(uci[3])
     });
   }

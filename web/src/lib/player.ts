@@ -7,6 +7,17 @@ export interface PlayerIdentity {
 
 const NAME_KEY = 'chess-mcp:name';
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isPlayerIdentity(value: unknown): value is PlayerIdentity {
+  if (!isRecord(value)) return false;
+  return (
+    (value.seat === 'white' || value.seat === 'black') && typeof value.token === 'string'
+  );
+}
+
 function playerKey(gameId: string): string {
   return `chess-mcp:player:${gameId}`;
 }
@@ -31,11 +42,8 @@ export function getIdentity(gameId: string): PlayerIdentity | null {
   try {
     const raw = localStorage.getItem(playerKey(gameId));
     if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<PlayerIdentity>;
-    if ((parsed.seat === 'white' || parsed.seat === 'black') && typeof parsed.token === 'string') {
-      return { seat: parsed.seat, token: parsed.token };
-    }
-    return null;
+    const parsed: unknown = JSON.parse(raw);
+    return isPlayerIdentity(parsed) ? { seat: parsed.seat, token: parsed.token } : null;
   } catch {
     return null;
   }

@@ -34,13 +34,39 @@ function toMap(games: PublicGame[]): Record<string, PublicGame> {
   return map;
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function isWsServerMessage(value: unknown): value is WsServerMessage {
+  if (!isRecord(value) || typeof value.type !== 'string') return false;
+
+  switch (value.type) {
+    case 'hello':
+      return typeof value.serverTime === 'number';
+    case 'deleted':
+      return typeof value.id === 'string';
+    case 'game':
+      return isRecord(value.game) && typeof value.game.id === 'string';
+    case 'snapshot':
+      return (
+        Array.isArray(value.games) &&
+        value.games.every((game) => isRecord(game) && typeof game.id === 'string')
+      );
+    default:
+      return false;
+  }
+}
+
 function handleMessage(raw: string): void {
-  let message: WsServerMessage;
+  let parsed: unknown;
   try {
-    message = JSON.parse(raw) as WsServerMessage;
+    parsed = JSON.parse(raw);
   } catch {
     return;
   }
+  if (!isWsServerMessage(parsed)) return;
+  const message = parsed;
 
   if (message.type === 'snapshot') {
     setState({ ...state, games: toMap(message.games), loaded: true });
@@ -126,13 +152,11 @@ export function removeGame(id: string): void {
 }
 
 export const live = {
-  subscribe(listener: Listener): () => void {
+  subscribe: (listener: Listener): (() => void) => {
     listeners.add(listener);
     return () => listeners.delete(listener);
   },
-  getSnapshot(): LiveState {
-    return state;
-  }
+  getSnapshot: (): LiveState => state
 };
 
 export function useLive(): LiveState {

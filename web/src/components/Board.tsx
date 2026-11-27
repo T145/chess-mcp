@@ -1,4 +1,4 @@
-import { Chess, type Square } from 'chess.js';
+import { Chess, SQUARES, type Square } from 'chess.js';
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { Chessboard } from 'react-chessboard';
 
@@ -18,6 +18,11 @@ interface PendingPromotion {
 
 const LIGHT_SQUARE = '#ebecd0';
 const DARK_SQUARE = '#739552';
+const SQUARE_SET = new Set<string>(SQUARES);
+
+function isSquare(value: string): value is Square {
+  return SQUARE_SET.has(value);
+}
 
 function kingSquare(chess: Chess, color: 'w' | 'b'): string | null {
   for (const row of chess.board()) {
@@ -51,9 +56,9 @@ export function Board({ game, orientation, canMove, onMove }: BoardProps) {
   }, [pendingPromotion]);
 
   const destinationMoves = useMemo(() => {
-    if (!selected) return [];
+    if (!selected || !isSquare(selected)) return [];
     try {
-      return chess.moves({ square: selected as Square, verbose: true });
+      return chess.moves({ square: selected, verbose: true });
     } catch {
       return [];
     }
@@ -98,7 +103,8 @@ export function Board({ game, orientation, canMove, onMove }: BoardProps) {
   }, [chess, destinationMoves, game.inCheck, game.lastMove, selected]);
 
   const needsPromotion = (from: string, to: string): boolean => {
-    const piece = chess.get(from as Square);
+    if (!isSquare(from) || !isSquare(to)) return false;
+    const piece = chess.get(from);
     if (!piece || piece.type !== 'p') return false;
     const targetRank = to[1];
     return (
@@ -107,11 +113,9 @@ export function Board({ game, orientation, canMove, onMove }: BoardProps) {
   };
 
   const attemptMove = (from: string, to: string): boolean => {
-    if (!canMove) return false;
+    if (!canMove || !isSquare(from) || !isSquare(to)) return false;
 
-    const legal = chess.moves({ square: from as Square, verbose: true }).some(
-      (move) => move.to === to
-    );
+    const legal = chess.moves({ square: from, verbose: true }).some((move) => move.to === to);
     if (!legal) return false;
 
     if (needsPromotion(from, to)) {

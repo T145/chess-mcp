@@ -27,6 +27,30 @@ interface ArrowGeometry {
   head: string;
 }
 
+interface Point {
+  x: number;
+  y: number;
+}
+
+const SQUARE_NAME = /^[a-h][1-8]$/;
+
+function formatPoint(point: Point): string {
+  return `${point.x.toFixed(2)},${point.y.toFixed(2)}`;
+}
+
+/**
+ * A knight is the only piece that changes file and rank by 1 and 2, so the
+ * shape can be inferred from the squares alone. Returns the elbow of the L
+ * (travelling the two-square leg first), or null for every other move.
+ */
+function knightElbow(fromSquare: string, toSquare: string, from: Point, to: Point): Point | null {
+  if (!SQUARE_NAME.test(fromSquare) || !SQUARE_NAME.test(toSquare)) return null;
+  const files = Math.abs(fromSquare.charCodeAt(0) - toSquare.charCodeAt(0));
+  const ranks = Math.abs(fromSquare.charCodeAt(1) - toSquare.charCodeAt(1));
+  if (!((files === 1 && ranks === 2) || (files === 2 && ranks === 1))) return null;
+  return ranks > files ? { x: from.x, y: to.y } : { x: to.x, y: from.y };
+}
+
 const BOARD_VIEWBOX = 2048;
 const BOARD_COLUMNS = 8;
 const BOARD_ROWS = 8;
@@ -34,7 +58,8 @@ const SQUARE_SIZE = BOARD_VIEWBOX / BOARD_COLUMNS;
 
 /**
  * Build a clean arrow with a stem that stops at the triangle's base. Drawing
- * the head separately avoids react-chessboard's marker/stem overlap.
+ * the head separately avoids react-chessboard's marker/stem overlap. Knight
+ * arrows turn at a sharp right angle so they trace the piece's L-shaped path.
  */
 function arrowGeometry(
   orientation: 'white' | 'black',
@@ -42,21 +67,31 @@ function arrowGeometry(
   toSquare: string
 ): ArrowGeometry | null {
   if (fromSquare === toSquare) return null;
+  if (!SQUARE_NAME.test(fromSquare) || !SQUARE_NAME.test(toSquare)) return null;
   const from = getRelativeCoords(orientation, BOARD_VIEWBOX, BOARD_COLUMNS, BOARD_ROWS, fromSquare);
   const to = getRelativeCoords(orientation, BOARD_VIEWBOX, BOARD_COLUMNS, BOARD_ROWS, toSquare);
   const dx = to.x - from.x;
   const dy = to.y - from.y;
-  const length = Math.hypot(dx, dy);
-  if (length < 1) return null;
+  if (Math.hypot(dx, dy) < 1) return null;
 
-  const ux = dx / length;
-  const uy = dy / length;
+  const elbow = knightElbow(fromSquare, toSquare, from, to);
+
+  // The head always follows the stem's final leg — the short leg of a knight's L.
+  const approachX = elbow ? to.x - elbow.x : dx;
+  const approachY = elbow ? to.y - elbow.y : dy;
+  const approachLength = Math.hypot(approachX, approachY);
+  const ux = approachX / approachLength;
+  const uy = approachY / approachLength;
   const px = -uy;
   const py = ux;
 
+  // Leave the origin square along the first leg (the long one for a knight).
+  const leadX = elbow ? elbow.x - from.x : dx;
+  const leadY = elbow ? elbow.y - from.y : dy;
+  const leadLength = Math.hypot(leadX, leadY);
   const start = {
-    x: from.x + ux * SQUARE_SIZE * 0.12,
-    y: from.y + uy * SQUARE_SIZE * 0.12
+    x: from.x + (leadX / leadLength) * SQUARE_SIZE * 0.12,
+    y: from.y + (leadY / leadLength) * SQUARE_SIZE * 0.12
   };
   const tip = {
     x: to.x - ux * SQUARE_SIZE * 0.28,
@@ -70,9 +105,17 @@ function arrowGeometry(
   const left = { x: base.x + px * halfWidth, y: base.y + py * halfWidth };
   const right = { x: base.x - px * halfWidth, y: base.y - py * halfWidth };
 
+  let stem: string;
+  if (elbow) {
+    // Sharp right-angle elbow so the arrow traces the piece's L-shaped path.
+    stem = `M${formatPoint(start)} L${formatPoint(elbow)} L${formatPoint(base)}`;
+  } else {
+    stem = `M${formatPoint(start)} L${formatPoint(base)}`;
+  }
+
   return {
-    stem: `M${start.x.toFixed(2)},${start.y.toFixed(2)} L${base.x.toFixed(2)},${base.y.toFixed(2)}`,
-    head: `${tip.x.toFixed(2)},${tip.y.toFixed(2)} ${left.x.toFixed(2)},${left.y.toFixed(2)} ${right.x.toFixed(2)},${right.y.toFixed(2)}`
+    stem,
+    head: `${formatPoint(tip)} ${formatPoint(left)} ${formatPoint(right)}`
   };
 }
 
@@ -284,6 +327,7 @@ export function Board({
             stroke={arrowColor}
             strokeWidth={SQUARE_SIZE * 0.1}
             strokeLinecap="round"
+            strokeLinejoin="miter"
           />
           <polygon points={arrowShape.head} fill={arrowColor} />
         </svg>

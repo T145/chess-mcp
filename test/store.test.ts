@@ -106,8 +106,10 @@ describe('GameStore', () => {
       kind: 'human',
       timeControl: { category: 'bullet', label: '1 min', baseMs: 60_000, incrementMs: 0 }
     });
-    const startedAt = created.game.clock?.turnStartedAt ?? 0;
+    store.join(created.game.id, 'black', 'Bob', 'human');
+    const startedAt = store.getPublic(created.game.id).clock?.turnStartedAt ?? 0;
     expect(created.game.clock?.whiteMs).toBe(60_000);
+    expect(startedAt).toBeGreaterThan(0);
 
     const phases: string[] = [];
     store.subscribe((event) => {
@@ -142,6 +144,40 @@ describe('GameStore', () => {
 
     expect(swapped.seat).toBe('black');
     expect(swapped.game.clock).toEqual(before);
+    store.dispose();
+  });
+
+  it('waits for a second seat before starting the clock', () => {
+    const store = new GameStore({ autoTick: false });
+    const created = store.create({
+      as: 'white',
+      name: 'Alice',
+      kind: 'human',
+      timeControl: { category: 'rapid', label: '10 min', baseMs: 600_000, incrementMs: 0 }
+    });
+    const { id } = created.game;
+
+    expect(store.getPublic(id).clock?.turnStartedAt).toBeNull();
+    store.tick(Date.now() + 3_600_000);
+    expect(store.getPublic(id).status.phase).toBe('playing');
+
+    store.join(id, 'black', 'Bob', 'human');
+    expect(store.getPublic(id).clock?.turnStartedAt).not.toBeNull();
+    store.dispose();
+  });
+
+  it('starts a hotseat clock on the first move', () => {
+    const store = new GameStore({ autoTick: false });
+    const created = store.create({
+      as: 'none',
+      name: 'Hotseat',
+      kind: 'human',
+      timeControl: { category: 'blitz', label: '5 min', baseMs: 300_000, incrementMs: 0 }
+    });
+
+    expect(store.getPublic(created.game.id).clock?.turnStartedAt).toBeNull();
+    store.move(created.game.id, 'e4');
+    expect(store.getPublic(created.game.id).clock?.turnStartedAt).not.toBeNull();
     store.dispose();
   });
 

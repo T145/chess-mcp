@@ -164,6 +164,7 @@ export class Game {
     this.chess = new Chess(this.initialFen);
     this.status = statusFromPosition(this.chess);
     if (init.clock) {
+      const bothSeated = init.seats.white.kind !== 'open' && init.seats.black.kind !== 'open';
       this.clock = {
         category: init.clock.category,
         label: init.clock.label,
@@ -173,7 +174,8 @@ export class Game {
         whiteMs: init.clock.baseMs,
         blackMs: init.clock.baseMs,
         turn: this.turn,
-        turnStartedAt: this.isPlaying ? this.createdAt : null
+        // Do not charge anyone for the time spent inviting an opponent.
+        turnStartedAt: this.isPlaying && bothSeated ? this.createdAt : null
       };
     }
     this.syncPgnHeaders();
@@ -248,6 +250,15 @@ export class Game {
   }
 
   /**
+   * Begin the clock. Called when the second seat is filled, or on the first move
+   * of a hotseat game, so time spent waiting for an opponent is free.
+   */
+  startClock(now: number = Date.now()): void {
+    if (!this.clock || this.clock.turnStartedAt !== null || !this.isPlaying) return;
+    this.clock = { ...this.clock, turn: this.turn, turnStartedAt: now };
+  }
+
+  /**
    * Charge the side to move for the time spent so far. When the bank is empty
    * the game ends on time. Returns true when this call ended the game.
    */
@@ -317,6 +328,7 @@ export class Game {
 
   applyMove(input: MoveInput, now: number = Date.now()): MoveRecord {
     this.settleClock(now);
+    this.startClock(now);
     if (!this.isPlaying) {
       throw new UserError(`The game is over (${this.status.reason}). No more moves are allowed.`);
     }

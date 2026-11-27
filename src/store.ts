@@ -184,6 +184,8 @@ export class GameStore {
       tokenHash: hashToken(token)
     };
     game.syncPgnHeaders();
+    // Both seats are filled now, so the clock can start.
+    game.startClock();
     this.publish(game);
     return { game: game.toPublic(), seat, token };
   }

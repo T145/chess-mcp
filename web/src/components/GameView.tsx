@@ -325,6 +325,11 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
               <div>
                 <p className="text-[11px] font-bold uppercase tracking-wider text-muted">Status</p>
                 <p className="mt-1 text-sm font-semibold">{describeStatus(game)}</p>
+                {game.clock && game.clock.turnStartedAt === null && game.status.phase === 'playing' && (
+                  <p className="mt-1 text-[11px] text-muted">
+                    Clock starts once both seats are filled.
+                  </p>
+                )}
               </div>
               {result && <span className="chip chip-llm">{result}</span>}
             </div>

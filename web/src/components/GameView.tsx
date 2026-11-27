@@ -1,6 +1,7 @@
-import { useCallback, useState, type CSSProperties } from 'react';
+import { useCallback, useMemo, useState, type CSSProperties } from 'react';
 
 import type { Color, DrawAction, MoveInput, PublicGame } from '../../../src/shared/protocol';
+import { readMaterial } from '../../../src/shared/material';
 import { api } from '../lib/api';
 import { mergeGame, removeGame, useLive } from '../lib/live';
 import {
@@ -107,6 +108,7 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
   const turnColor = activeColor(game);
   const topColor: Color = orientation === 'white' ? 'black' : 'white';
   const bottomColor: Color = opposite(topColor);
+  const material = useMemo(() => readMaterial(game.fen, game.moves), [game.fen, game.moves]);
 
   const makeMove = useCallback(
     (move: MoveInput): void => {
@@ -225,6 +227,8 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
             <PlayerCard
               color={topColor}
               game={game}
+              captured={material[topColor].captured}
+              advantage={topColor === 'white' ? material.advantage : -material.advantage}
               isActive={turnColor === topColor}
               isYou={mySeat === topColor}
               isBottom={false}
@@ -240,6 +244,8 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
             <PlayerCard
               color={bottomColor}
               game={game}
+              captured={material[bottomColor].captured}
+              advantage={bottomColor === 'white' ? material.advantage : -material.advantage}
               isActive={turnColor === bottomColor}
               isYou={mySeat === bottomColor}
               isBottom

@@ -15,6 +15,9 @@ export function describeStatus(game: PublicGame): string {
   if (status.phase === 'resigned') {
     return `Resignation — ${capitalize(status.winner ?? '')} wins`;
   }
+  if (status.phase === 'timeout') {
+    return `Timeout — ${capitalize(status.winner ?? '')} wins`;
+  }
   return `Draw — ${status.reason}`;
 }
 
@@ -35,7 +38,11 @@ export function seatKindLabel(seat: PublicSeat): string {
 
 export function resultLabel(game: PublicGame): string | null {
   if (game.status.phase === 'playing') return null;
-  if (game.status.phase === 'checkmate' || game.status.phase === 'resigned') {
+  if (
+    game.status.phase === 'checkmate' ||
+    game.status.phase === 'resigned' ||
+    game.status.phase === 'timeout'
+  ) {
     return `${capitalize(game.status.winner ?? '')} wins`;
   }
   return 'Draw';

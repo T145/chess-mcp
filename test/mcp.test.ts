@@ -225,6 +225,39 @@ describe('MCP tools', () => {
     }
   });
 
+  it('creates clocked games from a preset and rejects unknown presets', async () => {
+    const harness = await setup();
+    try {
+      const a = await harness.connect();
+
+      const created = await a.callTool({
+        name: 'create_game',
+        arguments: { as: 'white', name: 'Alice', time_control: '3+2' }
+      });
+      const text = textOf(created);
+      expect(created.isError).toBeFalsy();
+      expect(text).toContain('Clock: 3 + 2 (+2s) — White');
+
+      const gameId = gameIdFrom(text);
+      expect(harness.store.getPublic(gameId).clock).toMatchObject({
+        category: 'blitz',
+        label: '3 + 2',
+        baseMs: 180_000,
+        incrementMs: 2_000,
+        turn: 'white'
+      });
+
+      const bad = await a.callTool({
+        name: 'create_game',
+        arguments: { as: 'white', name: 'Alice', time_control: '99+1' }
+      });
+      expect(bad.isError).toBe(true);
+      expect(textOf(bad)).toMatch(/unknown time control/i);
+    } finally {
+      await harness.close();
+    }
+  });
+
   it('supports open hotseat games without tokens', async () => {
     const harness = await setup();
     try {

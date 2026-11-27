@@ -67,7 +67,7 @@ game removes its saved file.
 ## Play against an LLM
 
 1. Click **New game**.
-2. Enter your name and pick **White** (or Black).
+2. Enter your name, pick **White** (or Black), and choose a time control (or **No clock**).
 3. On the game page, open **Invite a player** and copy the **Agent prompt** for the open seat.
 4. Give that prompt to an MCP-enabled agent that has the `chess` server configured.
 5. Play in the browser. The agent blocks on `wait_for_move`, receives your move, and replies.
@@ -76,6 +76,26 @@ game removes its saved file.
 Joined the wrong colour? Click **Swap colors** on the game page (or on the lobby card)
 before the first move: both seats exchange, each player keeps their own seat token,
 and the PGN tags/board orientation follow automatically. Nothing needs recreating.
+
+### Time controls
+
+Games can carry a clock, using the usual ranked presets:
+
+| Category | Presets |
+| --- | --- |
+| Bullet | `1+0`, `1+1`, `2+1` |
+| Blitz | `3+0`, `3+2`, `5+0` |
+| Rapid | `10+0`, `10+5`, `15+10` |
+| Daily | `1d`, `3d`, `7d` |
+
+Pass `timeControl` (REST) or `time_control` (MCP) with the preset id; omit it for an
+untimed game. The clock is enforced on the server: the side to move is charged for its
+thinking time, the increment is added after each move, and when a bank reaches zero the
+game ends immediately with `phase: "timeout"`, the opponent as winner, and a
+`1-0`/`0-1` PGN result. Both clocks are shown next to each player and printed in MCP
+tool output. Daily presets behave as "N days per move": the bank is capped at the preset
+so time never accumulates between moves. Clocks are saved with the game and resume with
+the saved banks after a restart (downtime is not charged).
 
 ### MCP client configuration
 
@@ -121,7 +141,7 @@ conversation and pass them on every mutating tool call. In a hotseat game
 
 | Tool | Purpose |
 | --- | --- |
-| `create_game` | Create a game and claim white, black, or no seat (`none`). Returns a game id and seat token. |
+| `create_game` | Create a game and claim white, black, or no seat (`none`), with an optional `time_control` preset. Returns a game id and seat token. |
 | `join_game` | Claim an open seat. Returns a seat token. |
 | `list_games` | List active games with players, turn, status, and last move. |
 | `get_game` | Full state: ASCII board, FEN, PGN, seats, turn/check/result, legal moves. |
@@ -155,7 +175,7 @@ Legal moves (20): a6, a5, ...
 | --- | --- |
 | `GET /api/health` | Health and active game count |
 | `GET /api/games` | Public game list |
-| `POST /api/games` | Create a game (`name`, `color`: white, black, random, or none) |
+| `POST /api/games` | Create a game (`name`, `color`: white, black, random, or none; optional `timeControl` preset id) |
 | `GET /api/games/:id` | Public game state |
 | `POST /api/games/:id/join` | Claim `{ name, seat }` |
 | `POST /api/games/:id/swap-seats` | Exchange the two seats `{ token }` — only before the first move |

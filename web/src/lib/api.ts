@@ -51,7 +51,11 @@ export const api = {
     return request(`/api/games/${encodeURIComponent(id)}`);
   },
 
-  createGame(body: { name: string; color: CreateGameColor }): Promise<CreateGameResponse> {
+  createGame(body: {
+    name: string;
+    color: CreateGameColor;
+    timeControl?: string | null;
+  }): Promise<CreateGameResponse> {
     return request('/api/games', { method: 'POST', body: JSON.stringify(body) });
   },
 

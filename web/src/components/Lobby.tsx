@@ -17,6 +17,7 @@ import {
   seatKindLabel,
   seatLabel
 } from '../lib/status';
+import { describeTimeControl } from '../../../src/shared/timeControl';
 import { ChevronRightIcon, PlusIcon, SwapIcon } from './Icons';
 
 function SeatRow({ game, color }: { game: PublicGame; color: Color }) {
@@ -78,6 +79,7 @@ function GameCard({ game, onJoin, onSwap, busy }: GameCardProps) {
         <span>
           {game.moves.length} plies
           {game.lastMove ? ` · last ${game.lastMove.san}` : ''}
+          {game.clock ? ` · ${describeTimeControl(game.clock)}` : ''}
         </span>
         <span>{new Date(game.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
       </div>

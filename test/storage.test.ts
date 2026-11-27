@@ -125,6 +125,37 @@ describe('GameStorage', () => {
     });
   });
 
+  it('persists clocks and resumes them without charging downtime', () => {
+    const dir = tempDir();
+    const store = new GameStore({ dataDir: dir, autoTick: false });
+    const created = store.create({
+      as: 'white',
+      name: 'Alice',
+      kind: 'human',
+      timeControl: { category: 'rapid', label: '10 + 5', baseMs: 600_000, incrementMs: 5_000 }
+    });
+    const gameId = created.game.id;
+    store.move(gameId, 'e4', created.token ?? '');
+
+    const saved = new GameStorage(dir).load()[0];
+    expect(saved?.clock?.label).toBe('10 + 5');
+    expect(saved?.clock?.whiteMs).toBeGreaterThanOrEqual(600_000);
+
+    const reloaded = new GameStore({ dataDir: dir, autoTick: false });
+    const restored = reloaded.getPublic(gameId);
+    expect(restored.clock?.label).toBe('10 + 5');
+    expect(restored.clock?.blackMs).toBe(600_000);
+    expect(restored.clock?.turnStartedAt).not.toBeNull();
+
+    // Older saved games have no clock field and must still load, untimed.
+    const legacy: Record<string, unknown> = { ...store.get(gameId).toSnapshot() };
+    delete legacy.clock;
+    expect(parseSnapshot(legacy)?.clock).toBeNull();
+
+    reloaded.dispose();
+    store.dispose();
+  });
+
   it('skips corrupt or invalid files instead of failing to start', () => {
     const dir = tempDir();
     const storage = new GameStorage(dir);

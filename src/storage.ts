@@ -3,7 +3,15 @@ import { homedir as osHomedir } from 'node:os';
 import path from 'node:path';
 
 import type { GameSnapshot, SeatState } from './game.js';
-import type { Color, GamePhase, GameStatus, MoveRecord, SeatKind } from './shared/protocol.js';
+import type {
+  Color,
+  GameClock,
+  GamePhase,
+  GameStatus,
+  MoveRecord,
+  SeatKind,
+  TimeControlCategory
+} from './shared/protocol.js';
 
 const SNAPSHOT_VERSION = 1;
 const SAFE_ID = /^[\w-]{1,64}$/;
@@ -61,8 +69,42 @@ function isPhase(value: unknown): value is GamePhase {
     value === 'checkmate' ||
     value === 'stalemate' ||
     value === 'draw' ||
-    value === 'resigned'
+    value === 'resigned' ||
+    value === 'timeout'
   );
+}
+
+function isTimeControlCategory(value: unknown): value is TimeControlCategory {
+  return value === 'bullet' || value === 'blitz' || value === 'rapid' || value === 'daily';
+}
+
+/** Returns null for a missing or malformed clock; the game then loads untimed. */
+function parseClock(value: unknown): GameClock | null {
+  if (value === null || value === undefined) return null;
+  if (!isRecord(value)) return null;
+
+  const { category, label, baseMs, incrementMs, bankCapMs, whiteMs, blackMs, turn, turnStartedAt } =
+    value;
+  if (!isTimeControlCategory(category) || typeof label !== 'string') return null;
+  if (!isColor(turn)) return null;
+  if (!isFiniteNumber(baseMs) || !isFiniteNumber(incrementMs)) return null;
+  if (!isFiniteNumber(whiteMs) || !isFiniteNumber(blackMs)) return null;
+  if (bankCapMs !== undefined && bankCapMs !== null && !isFiniteNumber(bankCapMs)) return null;
+  if (turnStartedAt !== null && turnStartedAt !== undefined && !isFiniteNumber(turnStartedAt)) {
+    return null;
+  }
+
+  return {
+    category,
+    label,
+    baseMs,
+    incrementMs,
+    ...(isFiniteNumber(bankCapMs) ? { bankCapMs } : {}),
+    whiteMs,
+    blackMs,
+    turn,
+    turnStartedAt: isFiniteNumber(turnStartedAt) ? turnStartedAt : null
+  };
 }
 
 function isFiniteNumber(value: unknown): value is number {
@@ -117,7 +159,8 @@ function parseStatus(value: unknown): GameStatus | null {
 export function parseSnapshot(value: unknown): GameSnapshot | null {
   if (!isRecord(value)) return null;
 
-  const { version, id, initialFen, seats, moves, status, drawOffer, createdAt, updatedAt } = value;
+  const { version, id, initialFen, seats, moves, status, drawOffer, clock, createdAt, updatedAt } =
+    value;
 
   if (version !== SNAPSHOT_VERSION) return null;
   if (typeof id !== 'string' || !SAFE_ID.test(id)) return null;
@@ -151,6 +194,7 @@ export function parseSnapshot(value: unknown): GameSnapshot | null {
     moves: parsedMoves,
     status: parsedStatus,
     drawOffer: parsedDrawOffer,
+    clock: parseClock(clock),
     createdAt,
     updatedAt
   };

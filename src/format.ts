@@ -1,5 +1,6 @@
 import type { Game } from './game.js';
 import type { Color, PublicGame } from './shared/protocol.js';
+import { describeTimeControl, formatClockLine } from './shared/timeControl.js';
 
 function capitalize(value: string): string {
   return value.charAt(0).toUpperCase() + value.slice(1);
@@ -16,6 +17,9 @@ export function describeStatus(game: PublicGame): string {
   }
   if (status.phase === 'resigned') {
     return `Resignation — ${capitalize(status.winner ?? '')} wins (${status.reason}).`;
+  }
+  if (status.phase === 'timeout') {
+    return `Timeout — ${capitalize(status.winner ?? '')} wins (${status.reason}).`;
   }
   return `Draw — ${status.reason}.`;
 }
@@ -47,9 +51,14 @@ export function formatState(game: Game, options: { includePgn?: boolean } = {}):
     '',
     game.boardAscii(),
     '',
-    `FEN: ${state.fen}`,
-    legalMovesLine(state)
+    `FEN: ${state.fen}`
   ];
+
+  if (state.clock) {
+    lines.push(formatClockLine(state.clock, state.turn, Date.now()));
+  }
+
+  lines.push(legalMovesLine(state));
 
   if (state.drawOffer) {
     lines.push(`Draw offer pending from ${state.drawOffer}.`);
@@ -64,9 +73,10 @@ export function formatState(game: Game, options: { includePgn?: boolean } = {}):
 
 export function formatGameLine(game: PublicGame): string {
   const last = game.lastMove ? ` | last ${game.lastMove.san}` : '';
+  const clock = game.clock ? ` | ${describeTimeControl(game.clock)}` : '';
   return (
     `${game.id} | White: ${formatSeat(game, 'white')} | Black: ${formatSeat(game, 'black')} | ` +
-    `${describeStatus(game)}${last} | ${game.moves.length} plies`
+    `${describeStatus(game)}${last}${clock} | ${game.moves.length} plies`
   );
 }
 

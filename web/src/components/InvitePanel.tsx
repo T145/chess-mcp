@@ -16,8 +16,13 @@ function agentPrompt(game: PublicGame, seat: Color, origin: string): string {
     `Join game ${game.id} as ${seat} with a name of your choice, and keep the seat_token returned by join_game.`,
     `Then loop: call wait_for_move(game_id="${game.id}", seat_token="<your token>"), and when it is your turn call `,
     `make_move(game_id="${game.id}", move="<SAN or UCI>", seat_token="<your token>").`,
+    game.clock
+      ? `This game is clocked (${game.clock.label}) — reply promptly or you will be flagged.`
+      : '',
     `Repeat until the game ends. Game link: ${origin}/game/${game.id}`
-  ].join(' ');
+  ]
+    .filter((line) => line.length > 0)
+    .join(' ');
 }
 
 export function InvitePanel({ game, onJoin, joining }: InvitePanelProps) {

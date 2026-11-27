@@ -3,7 +3,9 @@ import type { Color as ChessColor, Move, PieceSymbol, Square } from 'chess.js';
 
 import { UserError } from './errors.js';
 import type {
+  ClockConfig,
   Color,
+  GameClock,
   GameStatus,
   MoveInput,
   MoveRecord,
@@ -11,6 +13,7 @@ import type {
   PublicSeat,
   SeatKind
 } from './shared/protocol.js';
+import { remainingMs } from './shared/timeControl.js';
 
 export interface SeatState {
   kind: SeatKind;
@@ -23,6 +26,8 @@ export interface GameInit {
   seats: Record<Color, SeatState>;
   fen?: string;
   now?: number;
+  /** Omit for an untimed game. */
+  clock?: ClockConfig | null;
 }
 
 /**
@@ -37,6 +42,7 @@ export interface GameSnapshot {
   moves: MoveRecord[];
   status: GameStatus;
   drawOffer: Color | null;
+  clock: GameClock | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -146,6 +152,7 @@ export class Game {
   private lastMove: MoveRecord | null = null;
   private status: GameStatus;
   private drawOffer: Color | null = null;
+  private clock: GameClock | null = null;
   private updatedAt: number;
 
   constructor(init: GameInit) {
@@ -156,6 +163,19 @@ export class Game {
     this.seats = init.seats;
     this.chess = new Chess(this.initialFen);
     this.status = statusFromPosition(this.chess);
+    if (init.clock) {
+      this.clock = {
+        category: init.clock.category,
+        label: init.clock.label,
+        baseMs: init.clock.baseMs,
+        incrementMs: init.clock.incrementMs,
+        ...(init.clock.bankCapMs !== undefined ? { bankCapMs: init.clock.bankCapMs } : {}),
+        whiteMs: init.clock.baseMs,
+        blackMs: init.clock.baseMs,
+        turn: this.turn,
+        turnStartedAt: this.isPlaying ? this.createdAt : null
+      };
+    }
     this.syncPgnHeaders();
   }
 
@@ -186,6 +206,15 @@ export class Game {
         ? statusFromPosition(game.chess)
         : { ...snapshot.status };
     game.updatedAt = snapshot.updatedAt;
+    if (snapshot.clock) {
+      // Saved games resume with a full bank for the side to move: time spent
+      // while the server was down is not charged.
+      game.clock = {
+        ...snapshot.clock,
+        turn: game.turn,
+        turnStartedAt: game.isPlaying ? Date.now() : null
+      };
+    }
     game.syncPgnHeaders();
     return game;
   }
@@ -212,6 +241,43 @@ export class Game {
 
   get isPlaying(): boolean {
     return this.status.phase === 'playing';
+  }
+
+  get currentClock(): GameClock | null {
+    return this.clock ? { ...this.clock } : null;
+  }
+
+  /**
+   * Charge the side to move for the time spent so far. When the bank is empty
+   * the game ends on time. Returns true when this call ended the game.
+   */
+  settleClock(now: number = Date.now()): boolean {
+    if (!this.clock || this.clock.turnStartedAt === null || !this.isPlaying) return false;
+
+    const turn = this.turn;
+    if (remainingMs(this.clock, turn, now) > 0) return false;
+
+    this.clock = {
+      ...this.clock,
+      whiteMs: turn === 'white' ? 0 : this.clock.whiteMs,
+      blackMs: turn === 'black' ? 0 : this.clock.blackMs,
+      turnStartedAt: null
+    };
+    this.status = {
+      phase: 'timeout',
+      winner: opposite(turn),
+      reason: `${turn} ran out of time`
+    };
+    this.drawOffer = null;
+    this.syncPgnHeaders();
+    this.updatedAt = now;
+    return true;
+  }
+
+  private stopClock(): void {
+    if (this.clock && this.clock.turnStartedAt !== null) {
+      this.clock = { ...this.clock, turnStartedAt: null };
+    }
   }
 
   legalMoves(): string[] {
@@ -249,7 +315,8 @@ export class Game {
     this.updatedAt = Date.now();
   }
 
-  applyMove(input: MoveInput): MoveRecord {
+  applyMove(input: MoveInput, now: number = Date.now()): MoveRecord {
+    this.settleClock(now);
     if (!this.isPlaying) {
       throw new UserError(`The game is over (${this.status.reason}). No more moves are allowed.`);
     }
@@ -278,9 +345,31 @@ export class Game {
     this.lastMove = record;
     this.drawOffer = null;
     this.status = statusFromPosition(this.chess);
+    this.settleTurnClock(record.color, now);
     this.syncPgnHeaders();
-    this.updatedAt = Date.now();
+    this.updatedAt = now;
     return { ...record };
+  }
+
+  /** Bank the mover's remaining time, add the increment, and start the next turn. */
+  private settleTurnClock(color: Color, now: number): void {
+    if (!this.clock) return;
+
+    const startedAt = this.clock.turnStartedAt ?? now;
+    const spent = Math.max(0, now - startedAt);
+    const bank = color === 'white' ? this.clock.whiteMs : this.clock.blackMs;
+    let remaining = Math.max(0, bank - spent) + this.clock.incrementMs;
+    if (this.clock.bankCapMs !== undefined) {
+      remaining = Math.min(remaining, this.clock.bankCapMs);
+    }
+
+    this.clock = {
+      ...this.clock,
+      whiteMs: color === 'white' ? remaining : this.clock.whiteMs,
+      blackMs: color === 'black' ? remaining : this.clock.blackMs,
+      turn: color === 'white' ? 'black' : 'white',
+      turnStartedAt: this.isPlaying ? now : null
+    };
   }
 
   resign(color: Color): void {
@@ -293,6 +382,7 @@ export class Game {
       reason: `${color} resigned`
     };
     this.drawOffer = null;
+    this.stopClock();
     this.syncPgnHeaders();
     this.updatedAt = Date.now();
   }
@@ -320,6 +410,7 @@ export class Game {
     }
     this.status = { phase: 'draw', winner: null, reason: 'agreement' };
     this.drawOffer = null;
+    this.stopClock();
     this.syncPgnHeaders();
     this.updatedAt = Date.now();
   }
@@ -347,6 +438,7 @@ export class Game {
       moves: this.moves.map((move) => ({ ...move })),
       status: { ...this.status },
       drawOffer: this.drawOffer,
+      clock: this.clock ? { ...this.clock } : null,
       createdAt: this.createdAt,
       updatedAt: this.updatedAt
     };
@@ -370,6 +462,7 @@ export class Game {
       drawOffer: this.drawOffer,
       legalMoves: this.legalMoves(),
       pgn: this.chess.pgn(),
+      clock: this.clock ? { ...this.clock } : null,
       createdAt: this.createdAt,
       updatedAt: this.updatedAt
     };

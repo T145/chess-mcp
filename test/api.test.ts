@@ -189,6 +189,42 @@ describe('HTTP API and WebSocket', () => {
     }
   });
 
+  it('creates games with a clock preset and rejects unknown ones', async () => {
+    const server = await startServer();
+    try {
+      const timed = await post<CreateGameResponse>(server.base, '/api/games', {
+        name: 'Alice',
+        color: 'white',
+        timeControl: '3+2'
+      });
+      expect(timed.status).toBe(201);
+      expect(timed.body.game.clock).toMatchObject({
+        category: 'blitz',
+        label: '3 + 2',
+        baseMs: 180_000,
+        incrementMs: 2_000,
+        whiteMs: 180_000,
+        blackMs: 180_000
+      });
+
+      const untimed = await post<CreateGameResponse>(server.base, '/api/games', {
+        name: 'Bob',
+        color: 'black'
+      });
+      expect(untimed.body.game.clock).toBeNull();
+
+      const invalid = await post<{ error: string }>(server.base, '/api/games', {
+        name: 'Eve',
+        color: 'white',
+        timeControl: '99+1'
+      });
+      expect(invalid.status).toBe(400);
+      expect(invalid.body.error).toMatch(/unknown time control/i);
+    } finally {
+      await server.close();
+    }
+  });
+
   it('swaps seats before the first move and reports the new seat', async () => {
     const server = await startServer();
     try {

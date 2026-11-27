@@ -152,6 +152,7 @@ async function main(): Promise<void> {
       if (vite) await vite.close();
       await closeWebSocketServer(wss);
       await mcpHandler.close();
+      store.dispose();
     } catch (error) {
       console.error('Shutdown error:', error);
     }

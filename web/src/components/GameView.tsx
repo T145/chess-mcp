@@ -1,7 +1,8 @@
-import { useCallback, useMemo, useState, type CSSProperties } from 'react';
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 
 import type { Color, DrawAction, MoveInput, PublicGame } from '../../../src/shared/protocol';
 import { readMaterial } from '../../../src/shared/material';
+import { describeTimeControl, remainingMs } from '../../../src/shared/timeControl';
 import { api } from '../lib/api';
 import { mergeGame, removeGame, useLive } from '../lib/live';
 import {
@@ -113,6 +114,17 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
   const canSwapColors =
     identity !== null && game.status.phase === 'playing' && game.moves.length === 0;
 
+  // Tick locally between server updates so the running clock counts down; the
+  // server remains the authority on flag falls.
+  const clock = game.clock;
+  const clockRunning = clock !== null && game.status.phase === 'playing';
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!clockRunning) return undefined;
+    const timer = window.setInterval(() => setNow(Date.now()), 250);
+    return () => window.clearInterval(timer);
+  }, [clockRunning]);
+
   const makeMove = useCallback(
     (move: MoveInput): void => {
       void run(() => api.move(game.id, move, identity?.token));
@@ -221,6 +233,7 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
           ← Lobby
         </Link>
         <span className="chip">Game {game.id}</span>
+        {game.clock && <span className="chip">{describeTimeControl(game.clock)}</span>}
         {hotseat && <span className="chip chip-open">Hotseat</span>}
         {isSpectator && <span className="chip">Spectator</span>}
         {(game.seats.white.kind === 'llm' || game.seats.black.kind === 'llm') && (
@@ -265,6 +278,9 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
               game={game}
               captured={material[topColor].captured}
               advantage={topColor === 'white' ? material.advantage : -material.advantage}
+              clockMs={clock ? remainingMs(clock, topColor, now) : null}
+              clockCategory={clock?.category ?? null}
+              clockActive={clockRunning && turnColor === topColor}
               isActive={turnColor === topColor}
               isYou={mySeat === topColor}
               isBottom={false}
@@ -282,6 +298,9 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
               game={game}
               captured={material[bottomColor].captured}
               advantage={bottomColor === 'white' ? material.advantage : -material.advantage}
+              clockMs={clock ? remainingMs(clock, bottomColor, now) : null}
+              clockCategory={clock?.category ?? null}
+              clockActive={clockRunning && turnColor === bottomColor}
               isActive={turnColor === bottomColor}
               isYou={mySeat === bottomColor}
               isBottom

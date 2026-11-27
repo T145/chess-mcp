@@ -17,12 +17,24 @@ import type {
   ResignRequest,
   SwapSeatsRequest
 } from '../shared/protocol.js';
+import { findTimeControlPreset, timeControlIds, toClockConfig } from '../shared/timeControl.js';
 import type { GameStore } from '../store.js';
 
 const createGameSchema = z.object({
   name: z.string().min(1).max(40),
-  color: z.enum(['white', 'black', 'random', 'none'])
+  color: z.enum(['white', 'black', 'random', 'none']),
+  timeControl: z.string().min(1).max(20).nullish()
 }) satisfies z.ZodType<CreateGameRequest>;
+
+/** Resolve a preset id from a request into a clock config (or null = untimed). */
+function parseTimeControl(id: string | null | undefined): ReturnType<typeof toClockConfig> | null {
+  if (id === null || id === undefined || id.trim() === '') return null;
+  const preset = findTimeControlPreset(id);
+  if (!preset) {
+    throw new UserError(`Unknown time control "${id}". Use one of: ${timeControlIds()}.`);
+  }
+  return toClockConfig(preset);
+}
 
 const joinSeatSchema = z.object({
   name: z.string().min(1).max(40),
@@ -97,7 +109,8 @@ export function createApp(store: GameStore): AppBundle {
     const body = parseBody(createGameSchema, req.body);
     const color: Color | 'none' =
       body.color === 'random' ? (randomInt(2) === 0 ? 'white' : 'black') : body.color;
-    const created = store.create({ as: color, name: body.name, kind: 'human' });
+    const timeControl = parseTimeControl(body.timeControl);
+    const created = store.create({ as: color, name: body.name, kind: 'human', timeControl });
     res.status(201).json(created);
   });
 

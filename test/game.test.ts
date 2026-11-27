@@ -2,6 +2,7 @@ import { Chess } from 'chess.js';
 import { describe, expect, it } from 'vitest';
 
 import { Game } from '../src/game.js';
+import type { ClockConfig } from '../src/shared/protocol.js';
 
 function makeGame(fen?: string): Game {
   return new Game({
@@ -11,6 +12,24 @@ function makeGame(fen?: string): Game {
       black: { kind: 'human', name: 'Black Player' }
     },
     ...(fen ? { fen } : {})
+  });
+}
+
+function timedGame(overrides: Partial<ClockConfig> = {}, now = 0): Game {
+  return new Game({
+    id: 'timedgame',
+    seats: {
+      white: { kind: 'human', name: 'White Player' },
+      black: { kind: 'human', name: 'Black Player' }
+    },
+    now,
+    clock: {
+      category: 'blitz',
+      label: '3 + 2',
+      baseMs: 180_000,
+      incrementMs: 2_000,
+      ...overrides
+    }
   });
 }
 
@@ -188,5 +207,83 @@ describe('Game rules', () => {
     expect(restored.currentStatus).toEqual(game.currentStatus);
     expect(restored.toPublic().pgn).toContain('[Result "0-1"]');
     expect(restored.toPublic().pgn.trimEnd()).toMatch(/0-1$/);
+  });
+});
+
+describe('Game clock', () => {
+  it('starts both sides at the base time and runs the side to move', () => {
+    const game = timedGame({}, 1_000);
+
+    expect(game.toPublic().clock).toMatchObject({
+      whiteMs: 180_000,
+      blackMs: 180_000,
+      turnStartedAt: 1_000
+    });
+  });
+
+  it('banks elapsed time and adds the increment after each move', () => {
+    const game = timedGame({ baseMs: 60_000, incrementMs: 1_000 }, 0);
+
+    game.applyMove('e4', 5_000);
+    expect(game.toPublic().clock).toMatchObject({
+      whiteMs: 56_000,
+      blackMs: 60_000,
+      turnStartedAt: 5_000
+    });
+
+    game.applyMove('e5', 8_000);
+    expect(game.toPublic().clock).toMatchObject({
+      whiteMs: 56_000,
+      blackMs: 58_000,
+      turnStartedAt: 8_000
+    });
+  });
+
+  it('flags the side to move when its time expires', () => {
+    const game = timedGame({ baseMs: 10_000, incrementMs: 0 }, 0);
+
+    expect(game.settleClock(9_999)).toBe(false);
+    expect(() => game.applyMove('e4', 10_000)).toThrow(/game is over/i);
+
+    expect(game.currentStatus).toEqual({
+      phase: 'timeout',
+      winner: 'black',
+      reason: 'white ran out of time'
+    });
+    expect(game.toPublic().clock?.whiteMs).toBe(0);
+    expect(game.toPublic().clock?.turnStartedAt).toBeNull();
+    expect(game.toPublic().pgn).toContain('[Result "0-1"]');
+  });
+
+  it('stops the clock when the game ends another way', () => {
+    const game = timedGame({}, 0);
+    for (const [move, at] of [
+      ['f3', 1_000],
+      ['e5', 2_000],
+      ['g4', 3_000],
+      ['Qh4#', 4_000]
+    ] as const) {
+      game.applyMove(move, at);
+    }
+
+    expect(game.currentStatus.phase).toBe('checkmate');
+    expect(game.toPublic().clock?.turnStartedAt).toBeNull();
+    expect(game.toPublic().pgn).toContain('[Result "0-1"]');
+  });
+
+  it('caps daily games at their per-move allowance', () => {
+    const day = 86_400_000;
+    const game = timedGame(
+      { category: 'daily', label: '1 day', baseMs: day, incrementMs: day, bankCapMs: day },
+      0
+    );
+
+    game.applyMove('e4', 10_000);
+
+    expect(game.toPublic().clock?.whiteMs).toBe(day);
+  });
+
+  it('leaves untimed games without a clock', () => {
+    expect(makeGame().toPublic().clock).toBeNull();
   });
 });

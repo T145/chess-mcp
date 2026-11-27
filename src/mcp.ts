@@ -4,7 +4,8 @@ import * as z from 'zod/v4';
 import { UserError } from './errors.js';
 import { formatGameLine, formatState, formatTokenNotice } from './format.js';
 import type { Game } from './game.js';
-import type { Color } from './shared/protocol.js';
+import type { Color, ClockConfig } from './shared/protocol.js';
+import { findTimeControlPreset, timeControlIds, toClockConfig } from './shared/timeControl.js';
 import type { GameStore } from './store.js';
 
 const GAME_ID = z.string().min(1).describe('Game id, for example "3f9c2a1b".');
@@ -92,18 +93,37 @@ export function createMcpServer(store: GameStore): McpServer {
       title: 'Create a chess game',
       description:
         'Create a standard chess game and claim the white seat, black seat, or no seat (hotseat). ' +
-        'Returns a game id and a seat token. Keep the token and pass it to make_move, draw, and resign.',
+        'Optionally set a clock preset. Returns a game id and a seat token. Keep the token and ' +
+        'pass it to make_move, draw, and resign.',
       inputSchema: z.object({
         as: z
           .enum(['white', 'black', 'none'])
           .default('white')
           .describe('Seat to claim. Use "none" to leave both seats open for hotseat play.'),
-        name: z.string().min(1).max(40).default('LLM').describe('Display name for your seat.')
+        name: z.string().min(1).max(40).default('LLM').describe('Display name for your seat.'),
+        time_control: z
+          .string()
+          .optional()
+          .describe(
+            `Optional clock preset: ${timeControlIds()}. Omit for an untimed game. ` +
+              'The side to move is flagged when its time runs out.'
+          )
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
     },
-    async ({ as, name }) => {
-      const created = store.create({ as, name, kind: 'llm' });
+    async ({ as, name, time_control }) => {
+      let timeControl: ClockConfig | null = null;
+      if (time_control) {
+        const preset = findTimeControlPreset(time_control);
+        if (!preset) {
+          throw new UserError(
+            `Unknown time control "${time_control}". Use one of: ${timeControlIds()}.`
+          );
+        }
+        timeControl = toClockConfig(preset);
+      }
+
+      const created = store.create({ as, name, kind: 'llm', timeControl });
       const lines = [`Created game ${created.game.id}.`];
 
       if (created.seat && created.token) {

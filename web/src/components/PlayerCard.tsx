@@ -1,5 +1,6 @@
-import type { Color, PublicGame } from '../../../src/shared/protocol';
+import type { Color, PublicGame, TimeControlCategory } from '../../../src/shared/protocol';
 import type { MaterialPiece } from '../../../src/shared/material';
+import { formatClockTime } from '../../../src/shared/timeControl';
 import { seatKindLabel, seatLabel } from '../lib/status';
 
 const PIECE_GLYPHS: Record<Color, Record<MaterialPiece, string>> = {
@@ -40,6 +41,10 @@ interface PlayerCardProps {
   captured: MaterialPiece[];
   /** This player's net material lead in pawns; only shown when positive. */
   advantage: number;
+  /** Remaining clock time in ms, or null for an untimed game. */
+  clockMs: number | null;
+  clockCategory: TimeControlCategory | null;
+  clockActive: boolean;
   isActive: boolean;
   isYou: boolean;
   isBottom: boolean;
@@ -50,6 +55,9 @@ export function PlayerCard({
   game,
   captured,
   advantage,
+  clockMs,
+  clockCategory,
+  clockActive,
   isActive,
   isYou,
   isBottom
@@ -60,6 +68,12 @@ export function PlayerCard({
     seat.kind === 'llm' ? 'chip chip-llm' : seat.kind === 'open' ? 'chip chip-open' : 'chip';
   const capturedColor: Color = color === 'white' ? 'black' : 'white';
   const label = captured.length > 0 ? `Captured ${capturedLabel(captured)}` : null;
+  const lowTime = clockMs !== null && clockMs < 20_000;
+  const clockClass = `rounded-md border px-1.5 py-1 font-mono text-xs font-semibold tabular-nums ${
+    lowTime
+      ? 'border-danger/50 bg-danger/15 text-red-200'
+      : 'border-line bg-panel-2 text-ink'
+  } ${clockActive ? 'ring-1 ring-accent/50' : ''}`;
 
   return (
     <div
@@ -107,7 +121,19 @@ export function PlayerCard({
           )}
         </div>
       </div>
-      {isActive && <span className="h-2.5 w-2.5 rounded-full bg-accent live-dot" aria-label="to move" />}
+      <div className="flex items-center gap-2">
+        {clockMs !== null && clockCategory !== null && (
+          <span
+            className={clockClass}
+            aria-label={`${formatClockTime(clockMs, clockCategory)} remaining`}
+          >
+            {formatClockTime(clockMs, clockCategory)}
+          </span>
+        )}
+        {isActive && (
+          <span className="h-2.5 w-2.5 rounded-full bg-accent live-dot" aria-label="to move" />
+        )}
+      </div>
     </div>
   );
 }

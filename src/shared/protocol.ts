@@ -1,8 +1,39 @@
 export type Color = 'white' | 'black';
 export type SeatKind = 'human' | 'llm' | 'open';
-export type GamePhase = 'playing' | 'checkmate' | 'stalemate' | 'draw' | 'resigned';
+export type GamePhase =
+  | 'playing'
+  | 'checkmate'
+  | 'stalemate'
+  | 'draw'
+  | 'resigned'
+  | 'timeout';
 export type DrawAction = 'offer' | 'accept' | 'decline';
 export type CreateGameColor = Color | 'random' | 'none';
+export type TimeControlCategory = 'bullet' | 'blitz' | 'rapid' | 'daily';
+
+/** A time control as chosen when the game is created. */
+export interface ClockConfig {
+  category: TimeControlCategory;
+  label: string;
+  baseMs: number;
+  incrementMs: number;
+  /**
+   * Ceiling for a player's remaining time. Daily games use it to model a
+   * "N days per move" allowance instead of a growing bank.
+   */
+  bankCapMs?: number;
+}
+
+/** Live clock state: each colour's bank plus when the current turn started. */
+export interface GameClock extends ClockConfig {
+  whiteMs: number;
+  blackMs: number;
+  /** Colour whose clock is running. */
+  turn: Color;
+  /** Epoch ms when the side to move started thinking; null once the game ends. */
+  turnStartedAt: number | null;
+}
+
 
 export interface PublicSeat {
   kind: SeatKind;
@@ -35,6 +66,8 @@ export interface PublicGame {
   drawOffer: Color | null;
   legalMoves: string[];
   pgn: string;
+  /** Null when the game was created without a clock. */
+  clock: GameClock | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -48,6 +81,8 @@ export type WsServerMessage =
 export interface CreateGameRequest {
   name: string;
   color: CreateGameColor;
+  /** Preset id such as "10+5", or omit/null for an untimed game. */
+  timeControl?: string | null;
 }
 
 export interface JoinSeatRequest {

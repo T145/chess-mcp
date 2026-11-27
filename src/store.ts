@@ -5,6 +5,7 @@ import { Game, type SeatState } from './game.js';
 import { generateGameId } from './ids.js';
 import { GameStorage } from './storage.js';
 import type {
+  ClockConfig,
   Color,
   DrawAction,
   MoveInput,
@@ -16,11 +17,15 @@ export interface CreateGameOptions {
   as: Color | 'none';
   name: string;
   kind: SeatKind;
+  /** Omit or pass null for an untimed game. */
+  timeControl?: ClockConfig | null;
 }
 
 export interface GameStoreOptions {
   /** Directory for saved games. Omit or pass null to keep games in memory only. */
   dataDir?: string | null;
+  /** Set false to disable the background flag-fall ticker (tests drive tick()). */
+  autoTick?: boolean;
 }
 
 export interface CreatedGame {
@@ -70,10 +75,31 @@ export class GameStore {
   private readonly games = new Map<string, Game>();
   private readonly listeners = new Set<Listener>();
   private readonly storage: GameStorage | null;
+  private ticker: ReturnType<typeof setInterval> | null = null;
 
   constructor(options: GameStoreOptions = {}) {
     this.storage = options.dataDir ? new GameStorage(options.dataDir) : null;
     if (this.storage) this.restore();
+    if (options.autoTick !== false) {
+      this.ticker = setInterval(() => this.tick(), 1_000);
+      // Never keep the process (or a test run) alive just for the clock.
+      this.ticker.unref?.();
+    }
+  }
+
+  /** Stop the background clock ticker. */
+  dispose(): void {
+    if (this.ticker) {
+      clearInterval(this.ticker);
+      this.ticker = null;
+    }
+  }
+
+  /** Flag any game whose side to move has run out of time. */
+  tick(now: number = Date.now()): void {
+    for (const game of this.games.values()) {
+      if (game.settleClock(now)) this.publish(game);
+    }
   }
 
   subscribe(listener: Listener): () => void {
@@ -82,6 +108,8 @@ export class GameStore {
   }
 
   list(): PublicGame[] {
+    const now = Date.now();
+    for (const game of this.games.values()) game.settleClock(now);
     return [...this.games.values()]
       .map((game) => game.toPublic())
       .toSorted((a, b) => b.updatedAt - a.updatedAt);
@@ -93,6 +121,8 @@ export class GameStore {
     if (!game) {
       throw new UserError(`Game not found: ${id}. Use list_games to see active games.`);
     }
+    // Lazy flag-fall: a read must never report a move that is already illegal.
+    game.settleClock();
     return game;
   }
 
@@ -115,7 +145,8 @@ export class GameStore {
     if (options.as === 'none') {
       const game = new Game({
         id,
-        seats: { white: openSeat(), black: openSeat() }
+        seats: { white: openSeat(), black: openSeat() },
+        clock: options.timeControl ?? null
       });
       this.games.set(id, game);
       this.publish(game);
@@ -133,7 +164,7 @@ export class GameStore {
         ? { white: caller, black: openSeat() }
         : { white: openSeat(), black: caller };
 
-    const game = new Game({ id, seats });
+    const game = new Game({ id, seats, clock: options.timeControl ?? null });
     this.games.set(id, game);
     this.publish(game);
     return { game: game.toPublic(), seat: options.as, token };

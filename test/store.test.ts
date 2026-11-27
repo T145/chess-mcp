@@ -98,6 +98,64 @@ describe('GameStore', () => {
     expect(() => store.swapSeats(id, 'not-a-token')).toThrow(/invalid seat token/i);
   });
 
+  it('creates a timed game and flags the side to move on tick', () => {
+    const store = new GameStore({ autoTick: false });
+    const created = store.create({
+      as: 'white',
+      name: 'Alice',
+      kind: 'human',
+      timeControl: { category: 'bullet', label: '1 min', baseMs: 60_000, incrementMs: 0 }
+    });
+    const startedAt = created.game.clock?.turnStartedAt ?? 0;
+    expect(created.game.clock?.whiteMs).toBe(60_000);
+
+    const phases: string[] = [];
+    store.subscribe((event) => {
+      if (event.type === 'game') phases.push(event.game.status.phase);
+    });
+
+    store.tick(startedAt + 59_000);
+    expect(store.getPublic(created.game.id).status.phase).toBe('playing');
+
+    store.tick(startedAt + 60_000);
+    expect(store.getPublic(created.game.id).status).toEqual({
+      phase: 'timeout',
+      winner: 'black',
+      reason: 'white ran out of time'
+    });
+    expect(phases).toContain('timeout');
+    store.dispose();
+  });
+
+  it('keeps each clock bank attached to its colour when seats swap', () => {
+    const store = new GameStore({ autoTick: false });
+    const created = store.create({
+      as: 'white',
+      name: 'Alice',
+      kind: 'human',
+      timeControl: { category: 'rapid', label: '10 + 5', baseMs: 600_000, incrementMs: 5_000 }
+    });
+    store.join(created.game.id, 'black', 'Bob', 'human');
+    const before = store.getPublic(created.game.id).clock;
+
+    const swapped = store.swapSeats(created.game.id, created.token ?? '');
+
+    expect(swapped.seat).toBe('black');
+    expect(swapped.game.clock).toEqual(before);
+    store.dispose();
+  });
+
+  it('skips the clock entirely for untimed games', () => {
+    const store = new GameStore({ autoTick: false });
+    const created = store.create({ as: 'white', name: 'Alice', kind: 'human' });
+
+    store.tick(Date.now() + 86_400_000);
+
+    expect(store.getPublic(created.game.id).status.phase).toBe('playing');
+    expect(store.getPublic(created.game.id).clock).toBeNull();
+    store.dispose();
+  });
+
   it('handles resign and draw actions with seat tokens', () => {
     const store = new GameStore();
     const { id, whiteToken, blackToken } = seatedGame(store);

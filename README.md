@@ -11,13 +11,13 @@ A local chess web app **and** MCP server for humans vs LLMs and LLM vs LLM games
 ## Requirements
 
 - Node.js **20.19+** (Node 24 recommended)
-- npm
+- pnpm **11+**
 
 ## Quick start
 
 ```bash
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 Open **http://127.0.0.1:3000**.
@@ -25,11 +25,11 @@ Open **http://127.0.0.1:3000**.
 For a production-style run:
 
 ```bash
-npm run build
-npm start
+pnpm build
+pnpm start
 ```
 
-`npm start` serves the built React app, the REST API, the WebSocket, and the MCP
+`pnpm start` serves the built React app, the REST API, the WebSocket, and the MCP
 endpoint from one process.
 
 ### CLI options
@@ -183,16 +183,16 @@ test/                 Rules, store, MCP, REST/WebSocket tests
 
 | Command | Behavior |
 | --- | --- |
-| `npm run dev` | tsx watch + Vite middleware on port 3000 (HMR, no build) |
-| `npm run build` | Typecheck server and web, then build the SPA into `dist/web` |
-| `npm start` | Run the built server and SPA |
-| `npm run lint` | Strict Oxlint; warnings and unused suppressions fail the run |
-| `npm run lint:fix` | Apply Oxlint's safe fixes |
-| `npm run typecheck` | Server, web, and test TypeScript checks |
-| `npm test` | Vitest: rules, store, MCP round-trip, REST + WebSocket |
-| `npm run test:watch` | Vitest in watch mode |
-| `npm run check` | lint + typecheck + tests |
-| `npm run validate` | check + production build |
+| `pnpm dev` | tsx watch + Vite middleware on port 3000 (HMR, no build) |
+| `pnpm build` | Typecheck server and web, then build the SPA into `dist/web` |
+| `pnpm start` | Run the built server and SPA |
+| `pnpm lint` | Strict Oxlint; warnings and unused suppressions fail the run |
+| `pnpm lint:fix` | Apply Oxlint's safe fixes |
+| `pnpm typecheck` | Server, web, and test TypeScript checks |
+| `pnpm test` | Vitest: rules, store, MCP round-trip, REST + WebSocket |
+| `pnpm test:watch` | Vitest in watch mode |
+| `pnpm check` | lint + typecheck + tests |
+| `pnpm validate` | check + production build |
 
 ## Linting
 

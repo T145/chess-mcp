@@ -13,19 +13,21 @@
     "LICENSE"
   ],
   "engines": {
-    "node": ">=20.19.0"
+    "node": ">=20.19.0",
+    "pnpm": ">=11"
   },
+  "packageManager": "pnpm@11.22.0",
   "scripts": {
     "dev": "tsx watch src/index.ts --dev",
-    "build": "npm run build:server && npm run build:web",
+    "build": "pnpm run build:server && pnpm run build:web",
     "build:server": "tsc -p tsconfig.json",
     "build:web": "tsc -p tsconfig.web.json && vite build",
     "start": "node dist/index.js",
     "lint": "oxlint --deny-warnings --report-unused-disable-directives .",
     "lint:fix": "oxlint --fix .",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.web.json && tsc -p tsconfig.test.json",
-    "check": "npm run lint && npm run typecheck && npm test",
-    "validate": "npm run check && npm run build",
+    "check": "pnpm run lint && pnpm run typecheck && pnpm test",
+    "validate": "pnpm run check && pnpm run build",
     "test": "vitest run",
     "test:watch": "vitest"
   },

@@ -1,0 +1,5 @@
+# pnpm 11 build-script approval and release-age policy.
+allowBuilds:
+  esbuild: true
+minimumReleaseAgeExclude:
+  - vite@8.4.0

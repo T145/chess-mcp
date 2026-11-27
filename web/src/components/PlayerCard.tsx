@@ -47,7 +47,6 @@ interface PlayerCardProps {
   clockActive: boolean;
   isActive: boolean;
   isYou: boolean;
-  isBottom: boolean;
 }
 
 export function PlayerCard({
@@ -59,8 +58,7 @@ export function PlayerCard({
   clockCategory,
   clockActive,
   isActive,
-  isYou,
-  isBottom
+  isYou
 }: PlayerCardProps) {
   const seat = game.seats[color];
   const initial = seatLabel(seat).charAt(0).toUpperCase();
@@ -69,7 +67,7 @@ export function PlayerCard({
   const capturedColor: Color = color === 'white' ? 'black' : 'white';
   const label = captured.length > 0 ? `Captured ${capturedLabel(captured)}` : null;
   const lowTime = clockMs !== null && clockMs < 20_000;
-  const clockClass = `rounded-md border px-1.5 py-1 font-mono text-xs font-semibold tabular-nums ${
+  const clockClass = `rounded-md border px-2 py-1 font-mono text-sm font-semibold tabular-nums ${
     lowTime
       ? 'border-danger/50 bg-danger/15 text-red-200'
       : 'border-line bg-panel-2 text-ink'
@@ -77,12 +75,12 @@ export function PlayerCard({
 
   return (
     <div
-      className={`flex items-center gap-3 rounded-xl border px-3 py-2.5 transition-colors ${
-        isActive ? 'border-accent/60 bg-accent/10' : 'border-line bg-panel'
-      } ${isBottom ? '' : 'order-first'}`}
+      className={`flex items-center gap-2 rounded-lg border px-2 py-1.5 transition-colors ${
+        isActive ? 'border-accent/50 bg-accent/10' : 'border-line bg-panel'
+      }`}
     >
       <div
-        className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border text-sm font-bold ${
+        className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-md border text-xs font-bold ${
           color === 'white'
             ? 'border-slate-300/30 bg-slate-100 text-slate-900'
             : 'border-slate-500/40 bg-slate-800 text-slate-100'
@@ -92,21 +90,25 @@ export function PlayerCard({
         {initial}
       </div>
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="truncate text-sm font-semibold">{seatLabel(seat)}</span>
-          {isYou && <span className="text-[10px] font-bold tracking-wider text-accent-strong">YOU</span>}
+        <div className="flex items-center gap-1.5 leading-tight">
+          <span className="truncate text-[13px] font-semibold">{seatLabel(seat)}</span>
+          {isYou && (
+            <span className="shrink-0 rounded bg-accent/15 px-1 text-[9px] font-bold tracking-wider text-accent-strong">
+              YOU
+            </span>
+          )}
+          <span className="shrink-0 text-[10px] uppercase tracking-wider text-muted">{color}</span>
+          <span className={`${chipClass} shrink-0`}>{seatKindLabel(seat)}</span>
         </div>
-        <div className="mt-0.5 flex items-center gap-2">
-          <span className="text-[11px] uppercase tracking-wider text-muted">
-            {color}
-          </span>
-          <span className={chipClass}>{seatKindLabel(seat)}</span>
-        </div>
-        <div className="mt-1 flex min-h-[1.1rem] flex-wrap items-center gap-1" aria-label={label ?? undefined}>
+        <div
+          className="mt-0.5 flex min-h-[0.9rem] flex-wrap items-center gap-x-0.5 gap-y-0 text-[13px] leading-none"
+          aria-label={label ?? undefined}
+          title={label ?? undefined}
+        >
           {capturedGlyphs(captured).map(({ key, piece }) => (
             <span
               key={key}
-              className={`text-base leading-none ${
+              className={`leading-none ${
                 capturedColor === 'white' ? 'text-slate-100' : 'text-slate-400'
               }`}
               aria-hidden
@@ -115,13 +117,16 @@ export function PlayerCard({
             </span>
           ))}
           {advantage > 0 && (
-            <span className="ml-0.5 text-[11px] font-bold text-accent-strong" aria-label={`Material lead ${advantage}`}>
+            <span
+              className="ml-0.5 text-[11px] font-bold text-accent-strong"
+              aria-label={`Material lead ${advantage}`}
+            >
               +{advantage}
             </span>
           )}
         </div>
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex shrink-0 items-center gap-1.5">
         {clockMs !== null && clockCategory !== null && (
           <span
             className={clockClass}

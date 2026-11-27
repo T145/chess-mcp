@@ -19,9 +19,16 @@ export function App() {
   const gameMatch = /^\/game\/([a-f0-9]{8})$/i.exec(pathname);
   const gameId = gameMatch?.[1] ?? null;
 
+  // On a game page the whole app is pinned to the viewport on desktop so the
+  // board and sidebar never push each other below the fold. The lobby keeps
+  // its normal scrolling page.
   return (
-    <div className="flex min-h-screen flex-col">
-      <header className="sticky top-0 z-20 border-b border-line/80 bg-surface/85 backdrop-blur-md">
+    <div
+      className={`flex min-h-screen flex-col ${
+        gameId ? 'lg:h-dvh lg:min-h-0 lg:overflow-hidden' : ''
+      }`}
+    >
+      <header className="sticky top-0 z-20 shrink-0 border-b border-line/80 bg-surface/85 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-7xl items-center gap-3 px-4 sm:px-6">
           <Link to="/" className="flex items-center gap-2.5">
             <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-accent/40 bg-accent/15 text-lg text-accent-strong">
@@ -55,7 +62,7 @@ export function App() {
         </div>
       </header>
 
-      <main className="flex-1">
+      <main className={gameId ? 'flex-1 lg:flex lg:min-h-0 lg:flex-col lg:overflow-hidden' : 'flex-1'}>
         {gameId ? (
           <GameView key={gameId.toLowerCase()} gameId={gameId.toLowerCase()} />
         ) : (
@@ -63,14 +70,16 @@ export function App() {
         )}
       </main>
 
-      <footer className="border-t border-line/70 py-4">
-        <div className="mx-auto flex max-w-7xl flex-col gap-1 px-4 text-[11px] text-muted sm:flex-row sm:items-center sm:justify-between sm:px-6">
-          <span>
-            MCP endpoint: <code className="text-ink/80">{window.location.origin}/mcp</code> (Streamable HTTP)
-          </span>
-          <span>Local only · games live in memory</span>
-        </div>
-      </footer>
+      {!gameId && (
+        <footer className="border-t border-line/70 py-4">
+          <div className="mx-auto flex max-w-7xl flex-col gap-1 px-4 text-[11px] text-muted sm:flex-row sm:items-center sm:justify-between sm:px-6">
+            <span>
+              MCP endpoint: <code className="text-ink/80">{window.location.origin}/mcp</code> (Streamable HTTP)
+            </span>
+            <span>Local only · games live in memory</span>
+          </div>
+        </footer>
+      )}
 
       {newGameOpen && <NewGameDialog open onClose={() => setNewGameOpen(false)} />}
     </div>

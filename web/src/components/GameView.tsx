@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState
+} from 'react';
 
 import type { Color, DrawAction, MoveInput, PublicGame } from '../../../src/shared/protocol';
 import { readMaterial } from '../../../src/shared/material';
@@ -12,14 +19,76 @@ import {
   type PlayerIdentity
 } from '../lib/player';
 import { Link, navigate } from '../lib/router';
-import { activeColor, describeStatus, resultLabel } from '../lib/status';
+import { activeColor, describeStatus, resultLabel, seatLabel } from '../lib/status';
 import { Board } from './Board';
-import { CheckIcon, CopyIcon, FlipIcon, FlagIcon, HandshakeIcon, SwapIcon, TrashIcon } from './Icons';
+import { Dialog } from './Dialog';
+import {
+  CheckIcon,
+  CopyIcon,
+  FlipIcon,
+  FlagIcon,
+  HandshakeIcon,
+  PlusIcon,
+  SwapIcon,
+  TrashIcon
+} from './Icons';
 import { InvitePanel } from './InvitePanel';
 import { MoveList } from './MoveList';
 import { PlayerCard } from './PlayerCard';
 
-const BOARD_FRAME_STYLE: CSSProperties = { maxWidth: 'min(76vh, 680px)' };
+type SidePanelTab = 'moves' | 'info';
+
+/**
+ * Measures the free space next to the player cards and returns the largest
+ * square that fits inside it, so the board, clocks and move list stay on one
+ * screen without scrolling.
+ */
+function useFitSquare() {
+  const ref = useRef<HTMLDivElement>(null);
+  const [size, setSize] = useState(0);
+
+  useLayoutEffect(() => {
+    const element = ref.current;
+    if (!element) return undefined;
+    const measure = (width: number, height: number): void => {
+      const next = Math.floor(Math.min(width, height));
+      setSize((current) => (Math.abs(current - next) > 1 ? next : current));
+    };
+    const bounds = element.getBoundingClientRect();
+    measure(bounds.width, bounds.height);
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (!entry) return;
+      measure(entry.contentRect.width, entry.contentRect.height);
+    });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, []);
+
+  return { ref, size };
+}
+
+function tabClass(active: boolean): string {
+  return `relative shrink-0 px-4 py-2.5 text-xs font-semibold transition-colors ${
+    active
+      ? 'text-ink after:absolute after:inset-x-3 after:bottom-0 after:h-0.5 after:bg-accent'
+      : 'text-muted hover:text-ink'
+  }`;
+}
+
+function DetailRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <dt className="shrink-0">{label}</dt>
+      <dd
+        className={`min-w-0 truncate text-right text-ink ${mono ? 'font-mono text-[11px]' : ''}`}
+        title={value}
+      >
+        {value}
+      </dd>
+    </div>
+  );
+}
 
 function opposite(color: Color): Color {
   return color === 'white' ? 'black' : 'white';
@@ -40,10 +109,12 @@ function statusHint(
   game: PublicGame,
   hotseat: boolean,
   canMove: boolean,
-  result: string | null
+  result: string | null,
+  isSpectator: boolean
 ): string {
   if (game.status.phase !== 'playing') return result ?? 'Game over';
   if (hotseat) return 'Hotseat: move either side';
+  if (isSpectator) return 'Spectating live';
   return canMove ? 'Your move' : 'Waiting for the opponent';
 }
 
@@ -84,6 +155,9 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [tab, setTab] = useState<SidePanelTab>('moves');
+  const [inviteOpen, setInviteOpen] = useState(false);
+  const { ref: boardSlotRef, size: boardSize } = useFitSquare();
 
   const run = useCallback(
     async (action: () => Promise<{ game: PublicGame }>): Promise<void> => {
@@ -225,133 +299,156 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
   );
   const myPendingOffer = Boolean(game.drawOffer && mySeat !== null && game.drawOffer === mySeat);
   const result = resultLabel(game);
+  const openSeatCount =
+    (game.seats.white.kind === 'open' ? 1 : 0) + (game.seats.black.kind === 'open' ? 1 : 0);
+  // Before the first measurement the board simply fills the column; afterwards
+  // the player bars and board share one exact square so they line up.
+  const boardFrameStyle = boardSize > 0 ? { width: boardSize } : undefined;
+  const hasAgent = game.seats.white.kind === 'llm' || game.seats.black.kind === 'llm';
 
   return (
-    <div className="mx-auto max-w-7xl px-4 pb-12 pt-5 sm:px-6">
-      <div className="mb-5 flex flex-wrap items-center gap-2">
-        <Link to="/" className="btn btn-ghost -ml-2 px-2">
+    <div className="mx-auto flex h-full w-full max-w-7xl flex-col px-3 pb-3 pt-2 sm:px-6 lg:pb-4">
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
+        <Link to="/" className="btn btn-ghost -ml-2 px-2 py-1 text-xs">
           ← Lobby
         </Link>
         <span className="chip">Game {game.id}</span>
         {game.clock && <span className="chip">{describeTimeControl(game.clock)}</span>}
         {hotseat && <span className="chip chip-open">Hotseat</span>}
         {isSpectator && <span className="chip">Spectator</span>}
-        {(game.seats.white.kind === 'llm' || game.seats.black.kind === 'llm') && (
-          <span className="chip chip-llm">LLM game</span>
-        )}
-        <div className="ml-auto flex items-center gap-2">
+        {hasAgent && <span className="chip chip-llm">LLM game</span>}
+        <div className="ml-auto flex items-center gap-1">
           {canSwapColors && (
             <button
               type="button"
-              className="btn btn-ghost px-2"
+              className="btn btn-ghost px-2 py-1 text-xs"
               onClick={swapColors}
               disabled={busy}
               title="Swap seats before the first move"
             >
-              <SwapIcon className="h-4 w-4" />
-              Swap colors
+              <SwapIcon className="h-3.5 w-3.5" />
+              Swap
             </button>
           )}
           <button
             type="button"
-            className="btn btn-ghost px-2"
+            className="btn btn-ghost px-2 py-1 text-xs"
             onClick={flipBoard}
             title="Flip board"
           >
-            <FlipIcon className="h-4 w-4" />
+            <FlipIcon className="h-3.5 w-3.5" />
             Flip
           </button>
         </div>
       </div>
 
       {error && (
-        <div className="mb-4 rounded-xl border border-danger/40 bg-danger/10 px-3 py-2 text-sm text-red-200">
+        <div className="mt-2 shrink-0 rounded-lg border border-danger/40 bg-danger/10 px-3 py-1.5 text-xs text-red-200">
           {error}
         </div>
       )}
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <section className="min-w-0">
-          <div className="mx-auto w-full" style={BOARD_FRAME_STYLE}>
-            <PlayerCard
-              color={topColor}
-              game={game}
-              captured={material[topColor].captured}
-              advantage={topColor === 'white' ? material.advantage : -material.advantage}
-              clockMs={clock ? remainingMs(clock, topColor, now) : null}
-              clockCategory={clock?.category ?? null}
-              clockActive={clockRunning && turnColor === topColor}
-              isActive={turnColor === topColor}
-              isYou={mySeat === topColor}
-              isBottom={false}
-            />
-            <div className="my-2.5">
-              <Board
+      <div className="mt-2 grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[minmax(0,1fr)_400px]">
+        <section className="flex min-h-0 min-w-0 flex-col">
+          <div className="flex min-h-0 flex-col items-center gap-1.5 lg:h-full">
+            <div className="w-full" style={boardFrameStyle}>
+              <PlayerCard
+                color={topColor}
                 game={game}
-                orientation={orientation}
-                canMove={canMove && !busy}
-                onMove={makeMove}
+                captured={material[topColor].captured}
+                advantage={topColor === 'white' ? material.advantage : -material.advantage}
+                clockMs={clock ? remainingMs(clock, topColor, now) : null}
+                clockCategory={clock?.category ?? null}
+                clockActive={clockRunning && turnColor === topColor}
+                isActive={turnColor === topColor}
+                isYou={mySeat === topColor}
               />
             </div>
-            <PlayerCard
-              color={bottomColor}
-              game={game}
-              captured={material[bottomColor].captured}
-              advantage={bottomColor === 'white' ? material.advantage : -material.advantage}
-              clockMs={clock ? remainingMs(clock, bottomColor, now) : null}
-              clockCategory={clock?.category ?? null}
-              clockActive={clockRunning && turnColor === bottomColor}
-              isActive={turnColor === bottomColor}
-              isYou={mySeat === bottomColor}
-              isBottom
-            />
-
-            <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-line bg-panel px-3 py-2.5">
-              <div className="min-w-0">
-                <p className="truncate text-sm font-semibold">{describeStatus(game)}</p>
-                <p className="text-xs text-muted">{statusHint(game, hotseat, canMove, result)}</p>
+            <div
+              ref={boardSlotRef}
+              className="flex w-full items-center justify-center lg:min-h-0 lg:flex-1"
+            >
+              <div className="w-full" style={boardFrameStyle}>
+                <Board
+                  game={game}
+                  orientation={orientation}
+                  canMove={canMove && !busy}
+                  onMove={makeMove}
+                />
               </div>
-              {game.status.phase === 'playing' && game.inCheck && (
-                <span className="chip chip-open">Check</span>
-              )}
-              {result && <span className="chip chip-llm">{result}</span>}
+            </div>
+            <div className="w-full" style={boardFrameStyle}>
+              <PlayerCard
+                color={bottomColor}
+                game={game}
+                captured={material[bottomColor].captured}
+                advantage={bottomColor === 'white' ? material.advantage : -material.advantage}
+                clockMs={clock ? remainingMs(clock, bottomColor, now) : null}
+                clockCategory={clock?.category ?? null}
+                clockActive={clockRunning && turnColor === bottomColor}
+                isActive={turnColor === bottomColor}
+                isYou={mySeat === bottomColor}
+              />
             </div>
           </div>
         </section>
 
-        <aside className="space-y-4">
-          <section className="panel p-4">
-            <div className="flex items-start justify-between gap-2">
-              <div>
-                <p className="text-[11px] font-bold uppercase tracking-wider text-muted">Status</p>
-                <p className="mt-1 text-sm font-semibold">{describeStatus(game)}</p>
-                {game.clock && game.clock.turnStartedAt === null && game.status.phase === 'playing' && (
-                  <p className="mt-1 text-[11px] text-muted">
-                    Clock starts once both seats are filled.
-                  </p>
+        <aside className="flex min-h-0 flex-col gap-2.5">
+          <div className="panel flex flex-col overflow-hidden lg:min-h-0 lg:flex-1">
+            <div className="flex shrink-0 items-stretch border-b border-line">
+              <button
+                type="button"
+                aria-pressed={tab === 'moves'}
+                className={tabClass(tab === 'moves')}
+                onClick={() => setTab('moves')}
+              >
+                Moves
+              </button>
+              <button
+                type="button"
+                aria-pressed={tab === 'info'}
+                className={tabClass(tab === 'info')}
+                onClick={() => setTab('info')}
+              >
+                Info
+                {openSeatCount > 0 && (
+                  <span className="ml-1.5 rounded-full bg-accent/20 px-1.5 text-[10px] font-bold text-accent-strong">
+                    {openSeatCount}
+                  </span>
                 )}
-              </div>
-              {result && <span className="chip chip-llm">{result}</span>}
+              </button>
+              <span className="ml-auto self-center pr-3 text-[11px] text-muted">
+                {game.moves.length} plies
+              </span>
             </div>
 
-            {game.status.phase !== 'playing' && game.lastMove?.note && (
-              <p className="mt-2 rounded-lg border border-line bg-panel-2 px-3 py-2 text-xs leading-5 text-muted">
-                <span className="font-semibold text-ink">Last move note:</span> {game.lastMove.note}
-              </p>
-            )}
+            <div className="flex shrink-0 items-center gap-2 border-b border-line px-3 py-2">
+              <div className="min-w-0">
+                <p className="truncate text-[13px] font-semibold">{describeStatus(game)}</p>
+                <p className="truncate text-[11px] text-muted">
+                  {statusHint(game, hotseat, canMove, result, isSpectator)}
+                </p>
+              </div>
+              <div className="ml-auto flex shrink-0 items-center gap-1">
+                {game.status.phase === 'playing' && game.inCheck && (
+                  <span className="chip chip-open">Check</span>
+                )}
+                {result && <span className="chip chip-llm">{result}</span>}
+              </div>
+            </div>
 
             {game.drawOffer && (
-              <div className="mt-3 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2">
-                <p className="text-xs text-amber-100/90">
+              <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-3 py-2">
+                <p className="min-w-0 flex-1 text-[11px] leading-4 text-amber-100/90">
                   {myPendingOffer
                     ? 'Draw offer sent. Waiting for the opponent.'
                     : `Draw offered by ${game.drawOffer}.`}
                 </p>
                 {canRespondToDraw && (
-                  <div className="mt-2 flex gap-2">
+                  <div className="flex shrink-0 gap-1.5">
                     <button
                       type="button"
-                      className="btn btn-primary flex-1 py-1.5 text-xs"
+                      className="btn btn-primary px-2.5 py-1 text-[11px]"
                       disabled={busy}
                       onClick={handleAcceptDraw}
                     >
@@ -359,7 +456,7 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
                     </button>
                     <button
                       type="button"
-                      className="btn btn-secondary flex-1 py-1.5 text-xs"
+                      className="btn btn-secondary px-2.5 py-1 text-[11px]"
                       disabled={busy}
                       onClick={handleDeclineDraw}
                     >
@@ -370,12 +467,73 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
               </div>
             )}
 
-            {game.status.phase === 'playing' && (
-              <div className="mt-3 flex flex-wrap gap-2">
+            {tab === 'moves' ? (
+              <MoveList game={game} />
+            ) : (
+              <div className="scroll-thin min-h-0 space-y-3 overflow-y-auto p-3 text-xs leading-5 text-muted lg:flex-1">
+                <section>
+                  <h2 className="text-[11px] font-bold uppercase tracking-wider">Game info</h2>
+                  <dl className="mt-2 space-y-1.5">
+                    <DetailRow label="Game" value={game.id} mono />
+                    <DetailRow label="White" value={seatLabel(game.seats.white)} />
+                    <DetailRow label="Black" value={seatLabel(game.seats.black)} />
+                    <DetailRow
+                      label="Time control"
+                      value={game.clock ? describeTimeControl(game.clock) : 'Untimed'}
+                    />
+                    <DetailRow label="Moves" value={`${game.moves.length} plies`} />
+                  </dl>
+                </section>
+
+                {game.clock && game.clock.turnStartedAt === null && game.status.phase === 'playing' && (
+                  <p className="rounded-lg border border-line bg-panel-2 px-3 py-2">
+                    Clock starts once both seats are filled.
+                  </p>
+                )}
+
+                {game.status.phase !== 'playing' && game.lastMove?.note && (
+                  <section className="rounded-lg border border-line bg-panel-2 px-3 py-2">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-ink">
+                      Last move note
+                    </p>
+                    <p className="mt-1 leading-5">{game.lastMove.note}</p>
+                  </section>
+                )}
+
+                {game.status.phase !== 'playing' && (
+                  <p className="rounded-lg border border-line bg-panel-2 px-3 py-2">
+                    This game is finished. Start a new one from the lobby to play again.
+                  </p>
+                )}
+
+                {hasAgent && game.status.phase === 'playing' && (
+                  <p className="rounded-lg border border-line bg-panel-2 px-3 py-2">
+                    Agent reasoning is revealed in the PGN once the game ends.
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+
+          <div className="flex shrink-0 flex-col gap-2">
+            {openSeatCount > 0 && (
+              <button
+                type="button"
+                className="btn btn-primary w-full py-2 text-xs"
+                disabled={busy}
+                onClick={() => setInviteOpen(true)}
+              >
+                <PlusIcon className="h-4 w-4" />
+                Invite a player
+              </button>
+            )}
+
+            {game.status.phase === 'playing' ? (
+              <div className="flex gap-2">
                 {(mySeat || hotseat) && (
                   <button
                     type="button"
-                    className="btn btn-secondary flex-1 text-xs"
+                    className="btn btn-secondary flex-1 py-1.5 text-xs"
                     disabled={busy || Boolean(game.drawOffer)}
                     onClick={handleOfferDraw}
                   >
@@ -386,7 +544,7 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
                 {mySeat && (
                   <button
                     type="button"
-                    className="btn btn-danger text-xs"
+                    className="btn btn-danger flex-1 py-1.5 text-xs"
                     disabled={busy}
                     onClick={resign}
                   >
@@ -395,42 +553,52 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
                   </button>
                 )}
               </div>
+            ) : (
+              <Link to="/" className="btn btn-primary w-full py-2 text-xs">
+                <PlusIcon className="h-4 w-4" />
+                New game
+              </Link>
             )}
 
-            {game.status.phase !== 'playing' && (
-              <p className="mt-3 rounded-lg border border-line bg-panel-2 px-3 py-2 text-xs text-muted">
-                This game is finished. Start a new one from the lobby to play again.
-              </p>
-            )}
-          </section>
-
-          <MoveList game={game} />
-
-          <div className="flex gap-2">
-            <button
-              type="button"
-              className="btn btn-secondary flex-1 text-xs"
-              disabled={!game.pgn}
-              onClick={handleCopyPgn}
-            >
-              {copied ? <CheckIcon className="h-4 w-4" /> : <CopyIcon className="h-4 w-4" />}
-              {copied ? 'PGN copied' : 'Copy PGN'}
-            </button>
-            <button
-              type="button"
-              className="btn btn-ghost px-2.5 text-xs text-muted hover:text-red-300"
-              onClick={deleteGame}
-              title="Delete game"
-            >
-              <TrashIcon className="h-4 w-4" />
-            </button>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                className="btn btn-secondary flex-1 py-1.5 text-xs"
+                disabled={!game.pgn}
+                onClick={handleCopyPgn}
+              >
+                {copied ? <CheckIcon className="h-4 w-4" /> : <CopyIcon className="h-4 w-4" />}
+                {copied ? 'PGN copied' : 'Copy PGN'}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost px-2.5 py-1.5 text-xs text-muted hover:text-red-300"
+                onClick={deleteGame}
+                title="Delete game"
+              >
+                <TrashIcon className="h-4 w-4" />
+              </button>
+            </div>
           </div>
-
-          {(game.seats.white.kind === 'open' || game.seats.black.kind === 'open') && (
-            <InvitePanel game={game} onJoin={join} joining={busy} />
-          )}
         </aside>
       </div>
+
+      <Dialog
+        open={inviteOpen}
+        onClose={() => setInviteOpen(false)}
+        title={`Invite to game ${game.id}`}
+        widthClass="max-w-lg"
+      >
+        <InvitePanel
+          embedded
+          game={game}
+          joining={busy}
+          onJoin={(seat) => {
+            setInviteOpen(false);
+            join(seat);
+          }}
+        />
+      </Dialog>
     </div>
   );
 }

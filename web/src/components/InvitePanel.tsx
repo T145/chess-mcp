@@ -8,6 +8,8 @@ interface InvitePanelProps {
   game: PublicGame;
   onJoin: (seat: Color) => void;
   joining: boolean;
+  /** Render without panel chrome and the duplicate heading, for use inside a Dialog. */
+  embedded?: boolean;
 }
 
 function agentPrompt(game: PublicGame, seat: Color, origin: string): string {
@@ -28,7 +30,7 @@ function agentPrompt(game: PublicGame, seat: Color, origin: string): string {
     .join(' ');
 }
 
-export function InvitePanel({ game, onJoin, joining }: InvitePanelProps) {
+export function InvitePanel({ game, onJoin, joining, embedded = false }: InvitePanelProps) {
   const [copied, setCopied] = useState<string | null>(null);
   const origin = window.location.origin;
   const gameUrl = `${origin}/game/${game.id}`;
@@ -47,9 +49,13 @@ export function InvitePanel({ game, onJoin, joining }: InvitePanelProps) {
   };
 
   return (
-    <section className="panel p-4">
+    <section className={embedded ? undefined : 'panel p-4'}>
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold">Invite a player</h2>
+        {embedded ? (
+          <span className="text-xs text-muted">Share the link or copy an agent prompt.</span>
+        ) : (
+          <h2 className="text-sm font-semibold">Invite a player</h2>
+        )}
         <button
           type="button"
           className="btn btn-ghost px-2 py-1 text-xs"
@@ -99,7 +105,7 @@ export function InvitePanel({ game, onJoin, joining }: InvitePanelProps) {
                   disabled={joining}
                   onClick={() => onJoin(seat)}
                 >
-                  Join as {seat}
+                  Join as {capitalize(seat)}
                 </button>
               </div>
             );

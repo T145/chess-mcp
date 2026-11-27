@@ -189,6 +189,9 @@ a {
 }
 
 .dialog-panel {
+  margin: auto;
+  max-height: calc(100dvh - 2rem);
+  overflow-y: auto;
   opacity: 0;
   transform: translateY(8px) scale(0.985);
   transition: opacity 140ms ease, transform 140ms ease;
@@ -205,11 +208,11 @@ a {
 }
 
 .board-shell {
-  border-radius: 1rem;
+  border-radius: 0.375rem;
   overflow: hidden;
   border: 1px solid #2a333f;
   box-shadow:
-    0 28px 60px rgba(0, 0, 0, 0.38),
+    0 18px 36px rgba(0, 0, 0, 0.34),
     0 2px 0 rgba(255, 255, 255, 0.03) inset;
   background: #739552;
 }

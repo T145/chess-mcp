@@ -3,6 +3,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { UserError } from './errors.js';
 import { Game, type SeatState } from './game.js';
 import { generateGameId } from './ids.js';
+import { GameStorage } from './storage.js';
 import type {
   Color,
   DrawAction,
@@ -15,6 +16,11 @@ export interface CreateGameOptions {
   as: Color | 'none';
   name: string;
   kind: SeatKind;
+}
+
+export interface GameStoreOptions {
+  /** Directory for saved games. Omit or pass null to keep games in memory only. */
+  dataDir?: string | null;
 }
 
 export interface CreatedGame {
@@ -57,6 +63,12 @@ function openSeat(): SeatState {
 export class GameStore {
   private readonly games = new Map<string, Game>();
   private readonly listeners = new Set<Listener>();
+  private readonly storage: GameStorage | null;
+
+  constructor(options: GameStoreOptions = {}) {
+    this.storage = options.dataDir ? new GameStorage(options.dataDir) : null;
+    if (this.storage) this.restore();
+  }
 
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener);
@@ -175,6 +187,7 @@ export class GameStore {
   delete(id: string): void {
     const game = this.get(id);
     this.games.delete(game.id);
+    this.storage?.remove(game.id);
     this.emit({ type: 'deleted', id: game.id });
   }
 
@@ -222,7 +235,21 @@ export class GameStore {
   }
 
   private publish(game: Game): void {
+    this.storage?.save(game.toSnapshot());
     this.emit({ type: 'game', game: game.toPublic() });
+  }
+
+  private restore(): void {
+    if (!this.storage) return;
+
+    for (const snapshot of this.storage.load()) {
+      if (this.games.has(snapshot.id)) continue;
+      try {
+        this.games.set(snapshot.id, Game.fromSnapshot(snapshot));
+      } catch (error) {
+        console.error(`Skipping saved game ${snapshot.id}: could not replay its moves.`, error);
+      }
+    }
   }
 
   private emit(event: StoreEvent): void {
@@ -245,6 +272,7 @@ export class GameStore {
 
     if (victim) {
       this.games.delete(victim.id);
+      this.storage?.remove(victim.id);
       this.emit({ type: 'deleted', id: victim.id });
     }
   }

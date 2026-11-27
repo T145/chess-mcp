@@ -105,9 +105,13 @@ export function InvitePanel({ game, onJoin, joining }: InvitePanelProps) {
         </summary>
         <pre className="scroll-thin mt-2 overflow-x-auto text-[11px] leading-4 text-ink">{`{
   "mcpServers": {
-    "chess": { "url": "${origin}/mcp" }
+    "chess": { "type": "streamableHttp", "url": "${origin}/mcp" }
   }
 }`}</pre>
+        <p className="mt-2 text-[11px] leading-4 text-muted">
+          The "type" is required: without it, clients fall back to the legacy SSE transport and
+          fail to connect.
+        </p>
       </details>
     </section>
   );

@@ -38,11 +38,31 @@ endpoint from one process.
 chess-mcp [options]
 
 --port <number>   Port to listen on (default: 3000, env: PORT)
+--data-dir <dir>  Directory for saved games (env: CHESS_MCP_DATA_DIR)
 --dev             Serve the React app with Vite middleware (HMR, no build)
 -h, --help        Show help
 ```
 
 The server always binds to `127.0.0.1`. Open the printed URL in a browser.
+
+### Saved games
+
+Games are written to disk after every change (create, join, move, draw, resign),
+so the lobby is restored the next time the server starts. Each game is a small
+JSON file under `<data-dir>/games/<game-id>.json`.
+
+Default locations:
+
+| Platform | Directory |
+| --- | --- |
+| Windows | `%USERPROFILE%\Saved Games\chess-mcp` |
+| macOS | `~/Library/Application Support/chess-mcp` |
+| Linux | `$XDG_DATA_HOME/chess-mcp` (default `~/.local/share/chess-mcp`) |
+
+Override the location with `--data-dir <path>` or the `CHESS_MCP_DATA_DIR`
+environment variable. Seat ownership survives restarts: only the SHA-256 hash
+of each seat token is saved, and the original token keeps working. Deleting a
+game removes its saved file.
 
 ## Play against an LLM
 
@@ -59,6 +79,7 @@ The server always binds to `127.0.0.1`. Open the printed URL in a browser.
 {
   "mcpServers": {
     "chess": {
+      "type": "streamableHttp",
       "url": "http://127.0.0.1:3000/mcp"
     }
   }
@@ -68,6 +89,14 @@ The server always binds to `127.0.0.1`. Open the printed URL in a browser.
 The endpoint uses **MCP Streamable HTTP** (the current transport). MCP's old
 standalone HTTP+SSE transport is not used. The browser's live updates use a
 separate WebSocket at `/ws`.
+
+The `type` field is required. Clients treat a URL-only entry (`{"url": ...}`)
+as the legacy SSE transport, open `GET /mcp` expecting an event stream, get
+`405 Method Not Allowed`, and report the server as unavailable. Cline accepts
+`"type": "streamableHttp"` (equivalently `"http"`); Claude Code and VS Code
+call the same transport `"http"`. Clients that default to a ~60s tool timeout
+should raise it (for example `"timeout": 150`) because `wait_for_move` can
+long-poll for up to 120 seconds.
 
 ### Agent loop
 
@@ -154,8 +183,9 @@ Key points:
 - **Official MCP SDK v2** (`@modelcontextprotocol/server`), Streamable HTTP,
   loopback-only with Host/Origin validation from `@modelcontextprotocol/express`.
 - **Seat tokens** prevent one agent from moving for the other player.
-- **No persistence.** Games live in memory and are cleared on restart. The store
-  caps at 200 games and evicts oldest finished games.
+- **Saved games.** Every mutation rewrites `<data-dir>/games/<game-id>.json`, and
+  saved games are reloaded at startup. The store still caps at 200 in-memory
+  games and evicts the oldest finished ones (their saved files are removed too).
 - **No clocks, engine analysis, ratings, accounts, chat, or remote access** in
   v1. Untimed correspondence-style play is intentional: LLM response latency
   makes clocks awkward.
@@ -167,7 +197,8 @@ src/
   index.ts            CLI, HTTP server, Vite dev middleware / static serving
   mcp.ts              MCP tool registration
   game.ts             chess.js wrapper: moves, status, draw/resign, PGN, ASCII board
-  store.ts            GameStore: ids, seats, token hashes, events, limits
+  storage.ts          Saved-game directory resolution + per-game JSON persistence
+  store.ts            GameStore: ids, seats, token hashes, events, limits, restore
   format.ts           Text formatting for MCP tool results
   server/app.ts       Express REST routes + MCP mount + error handling
   server/ws.ts        WebSocket server, Origin check, broadcast
@@ -229,16 +260,18 @@ applies safe fixes on request. Changes are checked by
 
 The repository ships with:
 
-- Oxlint with type-aware rules: **0 warnings, 0 errors** across 32 files and
+- Oxlint with type-aware rules: **0 warnings, 0 errors** across 34 files and
   287 rules.
 - TypeScript: server, web, and test configs all clean.
 - Rules tests: Fool's mate, castling, en passant, promotion, draws,
   resignation, illegal moves, PGN and ASCII output.
 - Store tests: seat tokens, turn order, hotseat, events, lookup, deletion.
+- Storage tests: per-platform save directories, save/reload round-trips (including
+  seat tokens, draw offers, and finished games), corrupt-file tolerance, deletion.
 - MCP tests: two in-process clients create/join/play, `wait_for_move` resolves
   on the opponent's move, errors are `isError`.
 - API tests: real HTTP server + WebSocket broadcast + validation errors.
-- **30/30 Vitest tests pass.**
+- **37/37 Vitest tests pass.**
 
 The server was also smoke-tested over the wire with the official MCP client
 (`tools/list`, `create_game`, `join_game`, UCI moves, `get_game`) and the UI was
@@ -248,10 +281,11 @@ checked in a headless browser, including a live WebSocket move update.
 
 - Binds to `127.0.0.1` only; do not expose it publicly without adding auth and
   TLS. There is no remote access mode.
-- Seat tokens are high-entropy and stored hashed in memory; public game state
-  never includes them.
+- Seat tokens are high-entropy and only their SHA-256 hashes are stored (in
+  memory and in saved game files); public game state never includes them.
 - Game deletion is available to anyone on the local machine.
-- Restarting the process destroys all games.
+- Saved games live in the current user's profile (see [Saved games](#saved-games));
+  the server does not encrypt them.
 - The MCP server has no resources or prompts; all state is returned by tools.
 
 ## License

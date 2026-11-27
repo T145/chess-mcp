@@ -25,6 +25,22 @@ export interface GameInit {
   now?: number;
 }
 
+/**
+ * Serializable form of a game. It includes the seat token hashes, so saved
+ * games keep their seat ownership after a restart. Never send this to clients.
+ */
+export interface GameSnapshot {
+  version: 1;
+  id: string;
+  initialFen: string;
+  seats: Record<Color, SeatState>;
+  moves: MoveRecord[];
+  status: GameStatus;
+  drawOffer: Color | null;
+  createdAt: number;
+  updatedAt: number;
+}
+
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 const SQUARE_SET = new Set<string>(SQUARES);
 
@@ -111,6 +127,7 @@ function statusFromPosition(chess: Chess): GameStatus {
 export class Game {
   readonly id: string;
   readonly createdAt: number;
+  readonly initialFen: string;
   readonly seats: Record<Color, SeatState>;
 
   private readonly chess: Chess;
@@ -124,10 +141,41 @@ export class Game {
     this.id = init.id;
     this.createdAt = init.now ?? Date.now();
     this.updatedAt = this.createdAt;
+    this.initialFen = init.fen ?? START_FEN;
     this.seats = init.seats;
-    this.chess = new Chess(init.fen ?? START_FEN);
+    this.chess = new Chess(this.initialFen);
     this.status = statusFromPosition(this.chess);
     this.syncPgnHeaders();
+  }
+
+  /**
+   * Rebuild a game from a snapshot by replaying its moves from the initial
+   * position. Throws if the snapshot contains an illegal move.
+   */
+  static fromSnapshot(snapshot: GameSnapshot): Game {
+    const game = new Game({
+      id: snapshot.id,
+      seats: {
+        white: { ...snapshot.seats.white },
+        black: { ...snapshot.seats.black }
+      },
+      fen: snapshot.initialFen,
+      now: snapshot.createdAt
+    });
+
+    for (const move of snapshot.moves) {
+      game.chess.move(move.san);
+      game.moves.push({ ...move });
+    }
+
+    game.lastMove = game.moves.at(-1) ?? null;
+    game.drawOffer = snapshot.drawOffer;
+    game.status =
+      snapshot.status.phase === 'playing'
+        ? statusFromPosition(game.chess)
+        : { ...snapshot.status };
+    game.updatedAt = snapshot.updatedAt;
+    return game;
   }
 
   get fen(): string {
@@ -244,6 +292,23 @@ export class Game {
     }
     this.drawOffer = null;
     this.updatedAt = Date.now();
+  }
+
+  toSnapshot(): GameSnapshot {
+    return {
+      version: 1,
+      id: this.id,
+      initialFen: this.initialFen,
+      seats: {
+        white: { ...this.seats.white },
+        black: { ...this.seats.black }
+      },
+      moves: this.moves.map((move) => ({ ...move })),
+      status: { ...this.status },
+      drawOffer: this.drawOffer,
+      createdAt: this.createdAt,
+      updatedAt: this.updatedAt
+    };
   }
 
   toPublic(): PublicGame {

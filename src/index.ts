@@ -8,11 +8,13 @@ import type { ViteDevServer } from 'vite';
 
 import { createApp } from './server/app.js';
 import { attachWebSocket, closeWebSocketServer } from './server/ws.js';
+import { resolveDataDir } from './storage.js';
 import { GameStore } from './store.js';
 
 interface CliOptions {
   dev: boolean;
   port: number;
+  dataDir: string;
   help: boolean;
 }
 
@@ -22,8 +24,13 @@ function usage(): string {
     '',
     'Options:',
     '  --port <number>  Port to listen on (default: 3000, env: PORT)',
+    '  --data-dir <dir> Directory for saved games (env: CHESS_MCP_DATA_DIR)',
     '  --dev            Serve the React app with Vite middleware (no build needed)',
     '  -h, --help       Show this help',
+    '',
+    'By default games are saved to "Saved Games/chess-mcp" on Windows,',
+    '"~/Library/Application Support/chess-mcp" on macOS, and',
+    '"$XDG_DATA_HOME/chess-mcp" (or "~/.local/share/chess-mcp") on Linux.',
     '',
     'The server always binds to 127.0.0.1. Open the printed URL in a browser.',
     'MCP clients connect to http://127.0.0.1:<port>/mcp using Streamable HTTP.'
@@ -34,6 +41,7 @@ function parseArgs(argv: string[]): CliOptions {
   const options: CliOptions = {
     dev: false,
     port: Number(process.env.PORT ?? 3000),
+    dataDir: resolveDataDir(),
     help: false
   };
 
@@ -51,6 +59,15 @@ function parseArgs(argv: string[]): CliOptions {
       index += 1;
     } else if (arg.startsWith('--port=')) {
       options.port = Number(arg.slice('--port='.length));
+    } else if (arg === '--data-dir') {
+      const value = argv[index + 1];
+      if (!value) throw new Error('--data-dir needs a path');
+      options.dataDir = path.resolve(value);
+      index += 1;
+    } else if (arg.startsWith('--data-dir=')) {
+      const value = arg.slice('--data-dir='.length);
+      if (!value) throw new Error('--data-dir needs a path');
+      options.dataDir = path.resolve(value);
     } else {
       throw new Error(`Unknown option: ${arg}`);
     }
@@ -70,7 +87,7 @@ async function main(): Promise<void> {
     return;
   }
 
-  const store = new GameStore();
+  const store = new GameStore({ dataDir: options.dataDir });
   const { app, mcpHandler } = createApp(store);
   const server = createHttpServer(app);
   const wss = attachWebSocket(server, store, { allowViteHmr: options.dev });
@@ -121,6 +138,7 @@ async function main(): Promise<void> {
     const port = typeof address === 'object' && address ? address.port : options.port;
     console.log(`Chess MCP is running at http://127.0.0.1:${port}`);
     console.log(`MCP endpoint: http://127.0.0.1:${port}/mcp (Streamable HTTP)`);
+    console.log(`Saved games: ${options.dataDir}`);
     if (options.dev) console.log('Vite dev middleware is active (HMR enabled).');
   });
 

@@ -136,14 +136,19 @@ Repeat until the game ends.
 
 ### Move notes
 
-`make_move` takes an optional `note` (up to 500 characters). It is stored with the move,
-so the opponent gets it back from `wait_for_move`/`get_game` as `Last move note: …`, it
-appears in the web move list (hover the dotted move), and it is written into the PGN as a
-`{comment}`:
+`make_move` takes an optional `note` (up to 500 characters). It is stored with the move and
+written into the PGN as a `{comment}`:
 
 ```text
 1. e4 {Controls the centre; watch ...d5} e5 2. Nf3 {Develops, eyes d5}
 ```
+
+Notes are private while the game is running. An agent only receives its **own** notes —
+`make_move` echoes the note back, and `get_game` with your `seat_token` returns your notes as
+`Last move note: …` and as PGN comments. The opponent's notes are withheld from
+`wait_for_move`/`get_game`, and the web interface shows none at all. A hotseat game (both
+seats open) has a single operator, so that operator reads all of its own notes. Once the game
+ends every note becomes public, in the web move list and in the PGN.
 
 Writing the plan down before moving is a cheap check: it forces the threats and the
 piece you are about to expose into the sentence, which is exactly where hasty moves go
@@ -160,8 +165,8 @@ conversation and pass them on every mutating tool call. In a hotseat game
 | `create_game` | Create a game and claim white, black, or no seat (`none`), with an optional `time_control` preset. Returns a game id and seat token. |
 | `join_game` | Claim an open seat. Returns a seat token. |
 | `list_games` | List active games with players, turn, status, and last move. |
-| `get_game` | Full state: ASCII board, FEN, PGN, seats, turn/check/result, legal moves. |
-| `make_move` | Play SAN (`Nf3`, `O-O`, `e8=Q`) or UCI (`e2e4`, `e7e8q`). Optional `note` records your reasoning with the move. Enforces turn and seat token. |
+| `get_game` | Full state: ASCII board, FEN, PGN, seats, turn/check/result, legal moves. Pass `seat_token` to include your own move notes. |
+| `make_move` | Play SAN (`Nf3`, `O-O`, `e8=Q`) or UCI (`e2e4`, `e7e8q`). Optional `note` records your reasoning privately until the game ends. Enforces turn and seat token. |
 | `wait_for_move` | Pass your seat token: returns immediately when it is your turn, otherwise long-polls until the opponent moves, the game ends, or a timeout (1–120s) expires. |
 | `draw` | `offer`, `accept`, or `decline` a draw. |
 | `resign` | Resign. |

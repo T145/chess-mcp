@@ -219,6 +219,28 @@ describe('GameStore', () => {
     expect(store.getPublic(id).status.winner).toBe('black');
   });
 
+  it('hides move notes from public views until the game ends', () => {
+    const store = new GameStore();
+    const { id, whiteToken, blackToken } = seatedGame(store);
+
+    store.move(id, 'e4', whiteToken, 'Controls the centre; watch ...d5');
+
+    expect(store.getPublic(id).lastMove?.note).toBeUndefined();
+    expect(store.getPublic(id).moves[0]?.note).toBeUndefined();
+    expect(store.getPublic(id).pgn).not.toContain('Controls the centre');
+    expect(store.list()[0]?.moves[0]?.note).toBeUndefined();
+
+    // The notes are still stored on the game itself (agents and snapshots keep them).
+    expect(store.get(id).toPublic({ revealNotes: true }).lastMove?.note).toBe(
+      'Controls the centre; watch ...d5'
+    );
+
+    store.resign(id, blackToken);
+
+    expect(store.getPublic(id).moves[0]?.note).toBe('Controls the centre; watch ...d5');
+    expect(store.getPublic(id).pgn).toContain('{Controls the centre; watch ...d5}');
+  });
+
   it('publishes game and delete events', () => {
     const store = new GameStore();
     const events: string[] = [];

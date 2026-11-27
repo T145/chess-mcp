@@ -334,7 +334,7 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
               {result && <span className="chip chip-llm">{result}</span>}
             </div>
 
-            {game.lastMove?.note && (
+            {game.status.phase !== 'playing' && game.lastMove?.note && (
               <p className="mt-2 rounded-lg border border-line bg-panel-2 px-3 py-2 text-xs leading-5 text-muted">
                 <span className="font-semibold text-ink">Last move note:</span> {game.lastMove.note}
               </p>

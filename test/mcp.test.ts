@@ -225,12 +225,12 @@ describe('MCP tools', () => {
     }
   });
 
-  it('passes move notes to the opponent and into the PGN', async () => {
+  it('keeps move notes private to their author until the game ends', async () => {
     const harness = await setup();
     try {
       const a = await harness.connect();
       const b = await harness.connect();
-      const { gameId, whiteToken } = await createSeatedGame(a, b);
+      const { gameId, whiteToken, blackToken } = await createSeatedGame(a, b);
 
       const note = 'Taking the centre; watch ...d5';
       const moved = await a.callTool({
@@ -238,11 +238,52 @@ describe('MCP tools', () => {
         arguments: { game_id: gameId, move: 'e4', seat_token: whiteToken, note }
       });
       expect(moved.isError).toBeFalsy();
+      // The author gets its own note echoed back.
       expect(textOf(moved)).toContain(`Last move note: ${note}`);
 
-      const state = await b.callTool({ name: 'get_game', arguments: { game_id: gameId } });
-      expect(textOf(state)).toContain(`Last move note: ${note}`);
-      expect(textOf(state)).toContain(`1. e4 {${note}}`);
+      // ...and can read it again by identifying itself with the seat token.
+      const own = await a.callTool({
+        name: 'get_game',
+        arguments: { game_id: gameId, seat_token: whiteToken }
+      });
+      expect(textOf(own)).toContain(`Last move note: ${note}`);
+      expect(textOf(own)).toContain(`1. e4 {${note}}`);
+
+      // The opponent sees the move but not the reasoning.
+      const opponent = await b.callTool({
+        name: 'get_game',
+        arguments: { game_id: gameId, seat_token: blackToken }
+      });
+      expect(textOf(opponent)).toContain('Last move: e4 (e2e4)');
+      expect(textOf(opponent)).not.toContain(note);
+      expect(textOf(opponent)).not.toContain('{');
+
+      // Nor does a spectator with no seat token, even mid-game.
+      const spectator = await b.callTool({ name: 'get_game', arguments: { game_id: gameId } });
+      expect(textOf(spectator)).not.toContain(note);
+
+      // A bare `seat` cannot be used to impersonate a claimed seat either.
+      const impersonation = await b.callTool({
+        name: 'wait_for_move',
+        arguments: { game_id: gameId, seat: 'white' }
+      });
+      expect(impersonation.isError).toBe(true);
+      expect(textOf(impersonation)).toContain('seat_token');
+
+      const waited = await b.callTool({
+        name: 'wait_for_move',
+        arguments: { game_id: gameId, seat_token: blackToken }
+      });
+      expect(textOf(waited)).not.toContain(note);
+
+      // Once the game is over the notes become public.
+      await b.callTool({
+        name: 'resign',
+        arguments: { game_id: gameId, seat_token: blackToken }
+      });
+      const finished = await b.callTool({ name: 'get_game', arguments: { game_id: gameId } });
+      expect(textOf(finished)).toContain(`Last move note: ${note}`);
+      expect(textOf(finished)).toContain(`1. e4 {${note}}`);
     } finally {
       await harness.close();
     }
@@ -276,6 +317,36 @@ describe('MCP tools', () => {
       });
       expect(bad.isError).toBe(true);
       expect(textOf(bad)).toMatch(/unknown time control/i);
+    } finally {
+      await harness.close();
+    }
+  });
+
+  it('shows a hotseat operator all of its own notes', async () => {
+    const harness = await setup();
+    try {
+      const a = await harness.connect();
+      const created = await a.callTool({
+        name: 'create_game',
+        arguments: { as: 'none', name: 'Hotseat' }
+      });
+      const gameId = gameIdFrom(textOf(created));
+
+      await a.callTool({
+        name: 'make_move',
+        arguments: { game_id: gameId, move: 'e4', note: 'Hotseat plan' }
+      });
+
+      // One operator plays both colours, so every note is its own.
+      const state = await a.callTool({ name: 'get_game', arguments: { game_id: gameId } });
+      expect(textOf(state)).toContain('Last move note: Hotseat plan');
+
+      const waited = await a.callTool({
+        name: 'wait_for_move',
+        arguments: { game_id: gameId, seat: 'black' }
+      });
+      expect(waited.isError).toBeFalsy();
+      expect(textOf(waited)).toContain('Last move note: Hotseat plan');
     } finally {
       await harness.close();
     }

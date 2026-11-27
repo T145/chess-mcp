@@ -47,6 +47,21 @@ export interface GameSnapshot {
   updatedAt: number;
 }
 
+/**
+ * Which move notes to reveal: `true` = everyone's, `false` = none, or a colour
+ * to reveal only that player's notes (what an agent sees during a live game).
+ */
+export type NoteVisibility = boolean | Color;
+
+export interface PublicGameOptions {
+  /**
+   * Which move notes the view may contain. Defaults to none, so callers have to
+   * opt in and a new view cannot leak reasoning by accident. Agents pass their
+   * own seat while a game runs; everything may be shown once it ends.
+   */
+  revealNotes?: NoteVisibility;
+}
+
 const START_FEN = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 const SQUARE_SET = new Set<string>(SQUARES);
 
@@ -124,6 +139,25 @@ function cleanNote(note: string | undefined): string | undefined {
     .trim()
     .slice(0, 500);
   return cleaned.length > 0 ? cleaned : undefined;
+}
+
+/** True when a viewer with this visibility setting may read the move's note. */
+function maySeeNote(move: MoveRecord, revealNotes: NoteVisibility): boolean {
+  if (revealNotes === true) return true;
+  if (revealNotes === false) return false;
+  return move.color === revealNotes;
+}
+
+/** Copy a move record, keeping its note only when the caller may see it. */
+function publicMoveRecord(move: MoveRecord, revealNotes: NoteVisibility): MoveRecord {
+  return {
+    san: move.san,
+    from: move.from,
+    to: move.to,
+    color: move.color,
+    ...(move.promotion ? { promotion: move.promotion } : {}),
+    ...(move.note && maySeeNote(move, revealNotes) ? { note: move.note } : {})
+  };
 }
 
 function statusFromPosition(chess: Chess): GameStatus {
@@ -483,19 +517,21 @@ export class Game {
   }
 
   /**
-   * PGN including move notes as `{comments}`, the usual place for annotations.
-   * chess.js has no comment API, so comments are spliced into its movetext in
-   * move order.
+   * PGN including the move notes the caller may read, as `{comments}` — the
+   * usual place for annotations. Private on purpose: a caller has to state whose
+   * notes it may see. chess.js has no comment API, so comments are spliced into
+   * its movetext in move order.
    */
-  pgnWithNotes(): string {
+  private pgnWithNotes(revealNotes: NoteVisibility): string {
     const pgn = this.chess.pgn();
-    if (!this.moves.some((move) => move.note)) return pgn;
+    const visible = this.moves.filter((move) => move.note && maySeeNote(move, revealNotes));
+    if (visible.length === 0) return pgn;
 
     const bodyStart = pgn.indexOf('\n\n');
     let output = pgn;
     let cursor = bodyStart === -1 ? 0 : bodyStart + 2;
 
-    for (const move of this.moves) {
+    for (const move of visible) {
       if (!move.note) continue;
       const at = output.indexOf(move.san, cursor);
       if (at === -1) continue;
@@ -508,7 +544,8 @@ export class Game {
     return output;
   }
 
-  toPublic(): PublicGame {
+  toPublic(options: PublicGameOptions = {}): PublicGame {
+    const revealNotes = options.revealNotes ?? false;
     const seats: Record<Color, PublicSeat> = {
       white: { kind: this.seats.white.kind, name: this.seats.white.name },
       black: { kind: this.seats.black.kind, name: this.seats.black.name }
@@ -521,11 +558,11 @@ export class Game {
       inCheck: this.chess.inCheck(),
       status: { ...this.status },
       seats,
-      moves: this.moves.map((move) => ({ ...move })),
-      lastMove: this.lastMove ? { ...this.lastMove } : null,
+      moves: this.moves.map((move) => publicMoveRecord(move, revealNotes)),
+      lastMove: this.lastMove ? publicMoveRecord(this.lastMove, revealNotes) : null,
       drawOffer: this.drawOffer,
       legalMoves: this.legalMoves(),
-      pgn: this.pgnWithNotes(),
+      pgn: this.pgnWithNotes(revealNotes),
       clock: this.clock ? { ...this.clock } : null,
       createdAt: this.createdAt,
       updatedAt: this.updatedAt

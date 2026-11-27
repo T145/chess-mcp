@@ -3,7 +3,7 @@ import * as z from 'zod/v4';
 
 import { UserError } from './errors.js';
 import { formatGameLine, formatState, formatTokenNotice } from './format.js';
-import type { Game } from './game.js';
+import type { Game, NoteVisibility } from './game.js';
 import type { Color, ClockConfig } from './shared/protocol.js';
 import { findTimeControlPreset, timeControlIds, toClockConfig } from './shared/timeControl.js';
 import type { GameStore } from './store.js';
@@ -14,6 +14,45 @@ const SEAT_TOKEN = z
   .min(1)
   .optional()
   .describe('Seat token returned by create_game or join_game. Required in seated games.');
+
+/** True when nobody holds a seat, i.e. a hotseat game played by one operator. */
+function isHotseat(game: Game): boolean {
+  return game.seats.white.kind === 'open' && game.seats.black.kind === 'open';
+}
+
+/**
+ * Move notes an agent may read: its own seat's while the game is running, and
+ * everyone's once it is over. A hotseat game has a single operator, so its notes
+ * are all that operator's own. A viewer with no seat (a spectator) reads none.
+ */
+function notesFor(game: Game, viewer: Color | null): NoteVisibility {
+  if (!game.isPlaying) return true;
+  if (isHotseat(game)) return true;
+  return viewer ?? false;
+}
+
+/**
+ * Resolve the colour a caller is reading as. A seat token proves a seat; a bare
+ * `seat` is only trusted while that seat is still open (hotseat), so a spectator
+ * cannot name a taken seat to read its notes.
+ */
+function viewerSeat(
+  store: GameStore,
+  gameId: string,
+  seatToken?: string,
+  seat?: Color
+): Color | null {
+  if (seatToken) return store.playerSeat(gameId, seatToken);
+  if (!seat) return null;
+
+  const game = store.get(gameId);
+  if (game.seats[seat].kind !== 'open') {
+    throw new UserError(
+      `The ${seat} seat is claimed; pass its seat_token to read that seat's notes.`
+    );
+  }
+  return seat;
+}
 
 interface WaitResult {
   game: Game;
@@ -139,7 +178,8 @@ export function createMcpServer(store: GameStore): McpServer {
         );
       }
 
-      lines.push('', formatState(store.get(created.game.id)));
+      const game = store.get(created.game.id);
+      lines.push('', formatState(game, { revealNotes: notesFor(game, created.seat) }));
       return { content: [{ type: 'text', text: lines.join('\n') }] };
     }
   );
@@ -160,6 +200,7 @@ export function createMcpServer(store: GameStore): McpServer {
     },
     async ({ game_id, seat, name }) => {
       const joined = store.join(game_id, seat, name, 'llm');
+      const game = store.get(joined.game.id);
       return {
         content: [
           {
@@ -169,7 +210,7 @@ export function createMcpServer(store: GameStore): McpServer {
               '',
               formatTokenNotice(seat, name, joined.token),
               '',
-              formatState(store.get(joined.game.id))
+              formatState(game, { revealNotes: notesFor(game, joined.seat) })
             ].join('\n')
           }
         ]
@@ -199,13 +240,17 @@ export function createMcpServer(store: GameStore): McpServer {
     {
       title: 'Get a game',
       description:
-        'Get the full state of a game: board, players, turn, check/result status, FEN, PGN, and legal moves.',
-      inputSchema: z.object({ game_id: GAME_ID }),
+        'Get the full state of a game: board, players, turn, check/result status, FEN, PGN, and legal moves. ' +
+        'Pass seat_token to read your own move notes; the opponent’s notes stay hidden until the game ends.',
+      inputSchema: z.object({ game_id: GAME_ID, seat_token: SEAT_TOKEN }),
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
     },
-    async ({ game_id }) => {
+    async ({ game_id, seat_token }) => {
       const game = store.get(game_id);
-      return { content: [{ type: 'text', text: formatState(game) }] };
+      const viewer = viewerSeat(store, game_id, seat_token);
+      return {
+        content: [{ type: 'text', text: formatState(game, { revealNotes: notesFor(game, viewer) }) }]
+      };
     }
   );
 
@@ -228,8 +273,9 @@ export function createMcpServer(store: GameStore): McpServer {
           .max(500)
           .optional()
           .describe(
-            'Optional reasoning for this move. It is saved with the move, returned to the ' +
-              'opponent by wait_for_move/get_game, and written into the PGN as a {comment}.'
+            'Optional reasoning for this move. It is saved with the move, written into the PGN ' +
+              'as a {comment}, and returned back to YOU by wait_for_move/get_game — your ' +
+              'opponent cannot read it while the game is running.'
           )
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
@@ -237,11 +283,18 @@ export function createMcpServer(store: GameStore): McpServer {
     async ({ game_id, move, seat_token, note }) => {
       const updated = store.move(game_id, move, seat_token, note);
       const played = updated.lastMove?.san ?? move;
+      const game = store.get(game_id);
+      // The move just played is the caller's own, so a tokenless hotseat mover
+      // is identified by the colour of that last move.
+      const viewer = viewerSeat(store, game_id, seat_token) ?? updated.lastMove?.color ?? null;
       return {
         content: [
           {
             type: 'text',
-            text: `Played ${played}.\n\n${formatState(store.get(game_id), { includePgn: false })}`
+            text: `Played ${played}.\n\n${formatState(game, {
+              includePgn: false,
+              revealNotes: notesFor(game, viewer)
+            })}`
           }
         ]
       };
@@ -280,9 +333,7 @@ export function createMcpServer(store: GameStore): McpServer {
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true }
     },
     async ({ game_id, since_ply, timeout_seconds, seat_token, seat }) => {
-      let playerSeat: Color | undefined;
-      if (seat_token) playerSeat = store.playerSeat(game_id, seat_token);
-      else if (seat) playerSeat = seat;
+      const playerSeat = viewerSeat(store, game_id, seat_token, seat) ?? undefined;
 
       const result = await waitForMove(store, game_id, since_ply, timeout_seconds, playerSeat);
       const status = result.game.currentStatus;
@@ -297,7 +348,10 @@ export function createMcpServer(store: GameStore): McpServer {
         content: [
           {
             type: 'text',
-            text: `${prefix}\n\n${formatState(result.game, { includePgn: false })}`
+            text: `${prefix}\n\n${formatState(result.game, {
+              includePgn: false,
+              revealNotes: notesFor(result.game, playerSeat ?? null)
+            })}`
           }
         ]
       };
@@ -323,6 +377,7 @@ export function createMcpServer(store: GameStore): McpServer {
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
     },
     async ({ game_id, action, seat_token, seat }) => {
+      const viewer = viewerSeat(store, game_id, seat_token, seat);
       store.draw(game_id, action, seat_token, seat);
       const message =
         action === 'offer'
@@ -330,11 +385,15 @@ export function createMcpServer(store: GameStore): McpServer {
           : action === 'accept'
             ? 'Draw accepted.'
             : 'Draw offer declined.';
+      const game = store.get(game_id);
       return {
         content: [
           {
             type: 'text',
-            text: `${message}\n\n${formatState(store.get(game_id), { includePgn: false })}`
+            text: `${message}\n\n${formatState(game, {
+              includePgn: false,
+              revealNotes: notesFor(game, viewer)
+            })}`
           }
         ]
       };
@@ -357,12 +416,17 @@ export function createMcpServer(store: GameStore): McpServer {
       annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false }
     },
     async ({ game_id, seat_token, seat }) => {
+      const viewer = viewerSeat(store, game_id, seat_token, seat);
       store.resign(game_id, seat_token, seat);
+      const game = store.get(game_id);
       return {
         content: [
           {
             type: 'text',
-            text: `Resigned.\n\n${formatState(store.get(game_id), { includePgn: false })}`
+            text: `Resigned.\n\n${formatState(game, {
+              includePgn: false,
+              revealNotes: notesFor(game, viewer)
+            })}`
           }
         ]
       };

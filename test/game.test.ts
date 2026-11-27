@@ -288,9 +288,13 @@ describe('Game clock', () => {
     const game = makeGame();
     game.applyMove('e4', Date.now(), '  Controls the centre {and d5}\n then Nf3 ');
 
-    expect(game.toPublic().lastMove?.note).toBe('Controls the centre and d5 then Nf3');
-    expect(game.toPublic().pgn).toContain('1. e4 {Controls the centre and d5 then Nf3}');
-    expect(game.toPublic().pgn).toContain('[Result "*"]');
+    expect(game.toPublic({ revealNotes: true }).lastMove?.note).toBe(
+      'Controls the centre and d5 then Nf3'
+    );
+    expect(game.toPublic({ revealNotes: true }).pgn).toContain(
+      '1. e4 {Controls the centre and d5 then Nf3}'
+    );
+    expect(game.toPublic({ revealNotes: true }).pgn).toContain('[Result "*"]');
   });
 
   it('annotates only the moves that carry a note', () => {
@@ -299,17 +303,47 @@ describe('Game clock', () => {
     game.applyMove('e5');
     game.applyMove('Nf3', Date.now(), 'Develops and eyes e5');
 
-    expect(game.toPublic().moves.filter((move) => move.note)).toHaveLength(1);
-    const pgn = game.toPublic().pgn;
-    expect(pgn).not.toContain('e4 {');
-    expect(pgn).toContain('2. Nf3 {Develops and eyes e5}');
+    const all = game.toPublic({ revealNotes: true });
+    expect(all.moves.filter((move) => move.note)).toHaveLength(1);
+    expect(all.pgn).not.toContain('e4 {');
+    expect(all.pgn).toContain('2. Nf3 {Develops and eyes e5}');
   });
 
   it('caps note length', () => {
     const game = makeGame();
     game.applyMove('e4', Date.now(), 'x'.repeat(700));
 
-    expect(game.toPublic().lastMove?.note).toHaveLength(500);
+    expect(game.toPublic({ revealNotes: true }).lastMove?.note).toHaveLength(500);
+  });
+
+  it('hides notes by default and can show a single seat’s notes', () => {
+    const game = makeGame();
+    game.applyMove('e4', Date.now(), 'White plan');
+    game.applyMove('e5', Date.now(), 'Black plan');
+
+    // The default public view carries no reasoning at all.
+    const hidden = game.toPublic();
+    expect(hidden.moves.map((move) => move.note)).toEqual([undefined, undefined]);
+    expect(hidden.lastMove?.note).toBeUndefined();
+    expect(hidden.pgn).not.toContain('White plan');
+    expect(hidden.pgn).not.toContain('Black plan');
+
+    // An agent reading as one seat only gets that seat's notes.
+    const white = game.toPublic({ revealNotes: 'white' });
+    expect(white.moves.map((move) => move.note)).toEqual(['White plan', undefined]);
+    expect(white.lastMove?.note).toBeUndefined();
+    expect(white.pgn).toContain('1. e4 {White plan}');
+    expect(white.pgn).not.toContain('Black plan');
+
+    const black = game.toPublic({ revealNotes: 'black' });
+    expect(black.moves.map((move) => move.note)).toEqual([undefined, 'Black plan']);
+    expect(black.lastMove?.note).toBe('Black plan');
+    expect(black.pgn).not.toContain('White plan');
+
+    // The notes themselves are still stored, so the finished game reveals them.
+    game.resign('white');
+    expect(game.toPublic({ revealNotes: true }).pgn).toContain('1. e4 {White plan}');
+    expect(game.toPublic({ revealNotes: true }).pgn).toContain('e5 {Black plan}');
   });
 
   it('keeps the clock paused when restoring a game with an open seat', () => {

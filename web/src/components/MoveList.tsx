@@ -24,6 +24,10 @@ function MoveCell({ move }: { move: MoveRecord | null }) {
 export function MoveList({ game }: { game: PublicGame }) {
   const rows = movePairs(game.moves);
   const endRef = useRef<HTMLDivElement>(null);
+  const hasAgent = game.seats.white.kind === 'llm' || game.seats.black.kind === 'llm';
+  // The server withholds move notes until the game is over; say so instead of
+  // leaving the dotted annotations a mystery.
+  const notesHidden = hasAgent && game.status.phase === 'playing';
 
   useEffect(() => {
     if (game.moves.length > 0) {
@@ -37,6 +41,11 @@ export function MoveList({ game }: { game: PublicGame }) {
         <span className="text-[11px] font-bold uppercase tracking-wider text-muted">Moves</span>
         <span className="text-[11px] text-muted">{game.moves.length} plies</span>
       </div>
+      {notesHidden && (
+        <p className="border-b border-line px-3 py-1.5 text-[11px] leading-4 text-muted">
+          Move notes are hidden until the game ends.
+        </p>
+      )}
       <div className="scroll-thin h-40 overflow-y-auto px-2 py-1 font-mono text-[13px]">
         {rows.length === 0 ? (
           <p className="px-2 py-6 text-center font-sans text-xs text-muted">No moves yet.</p>

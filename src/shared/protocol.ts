@@ -46,7 +46,11 @@ export interface MoveRecord {
   to: string;
   color: Color;
   promotion?: string;
-  /** Optional reasoning the mover attached to this move (empty for human moves). */
+  /**
+   * Optional reasoning the mover attached to this move (empty for human moves).
+   * It is private to the mover while the game is running: agents only receive
+   * their own notes, and the web app receives none until the game is over.
+   */
   note?: string;
 }
 
@@ -103,7 +107,10 @@ export type MoveInput =
 export interface MoveRequest {
   move: MoveInput;
   token?: string;
-  /** Optional reasoning for this move, saved with it and shown to the opponent. */
+  /**
+   * Optional reasoning for this move. It is saved with the move and readable by
+   * the mover (not the opponent) until the game ends, when it joins the PGN.
+   */
   note?: string;
 }
 

@@ -111,7 +111,7 @@ export class GameStore {
     const now = Date.now();
     for (const game of this.games.values()) game.settleClock(now);
     return [...this.games.values()]
-      .map((game) => game.toPublic())
+      .map((game) => this.publicGame(game))
       .toSorted((a, b) => b.updatedAt - a.updatedAt);
   }
 
@@ -127,7 +127,16 @@ export class GameStore {
   }
 
   getPublic(id: string): PublicGame {
-    return this.get(id).toPublic();
+    return this.publicGame(this.get(id));
+  }
+
+  /**
+   * Public view for the web app and HTTP API. Move notes (an agent's reasoning)
+   * stay hidden while the game is in progress, so an opponent cannot read them
+   * before the game is over; they appear in the PGN and move list afterwards.
+   */
+  private publicGame(game: Game): PublicGame {
+    return game.toPublic({ revealNotes: !game.isPlaying });
   }
 
   playerSeat(id: string, token: string): Color {
@@ -150,7 +159,7 @@ export class GameStore {
       });
       this.games.set(id, game);
       this.publish(game);
-      return { game: game.toPublic(), seat: null, token: null };
+      return { game: this.publicGame(game), seat: null, token: null };
     }
 
     const token = newToken();
@@ -167,7 +176,7 @@ export class GameStore {
     const game = new Game({ id, seats, clock: options.timeControl ?? null });
     this.games.set(id, game);
     this.publish(game);
-    return { game: game.toPublic(), seat: options.as, token };
+    return { game: this.publicGame(game), seat: options.as, token };
   }
 
   join(id: string, seat: Color, name: string, kind: SeatKind): JoinedGame {
@@ -187,7 +196,7 @@ export class GameStore {
     // Both seats are filled now, so the clock can start.
     game.startClock();
     this.publish(game);
-    return { game: game.toPublic(), seat, token };
+    return { game: this.publicGame(game), seat, token };
   }
 
   /**
@@ -201,7 +210,7 @@ export class GameStore {
 
     game.swapSeats();
     this.publish(game);
-    return { game: game.toPublic(), seat: before === 'white' ? 'black' : 'white' };
+    return { game: this.publicGame(game), seat: before === 'white' ? 'black' : 'white' };
   }
 
   move(id: string, move: MoveInput, token?: string, note?: string): PublicGame {
@@ -214,7 +223,7 @@ export class GameStore {
 
     game.applyMove(move, Date.now(), note);
     this.publish(game);
-    return game.toPublic();
+    return this.publicGame(game);
   }
 
   resign(id: string, token?: string, seat?: Color): PublicGame {
@@ -222,7 +231,7 @@ export class GameStore {
     const acting = this.resolveActionSeat(game, token, seat);
     game.resign(acting);
     this.publish(game);
-    return game.toPublic();
+    return this.publicGame(game);
   }
 
   draw(id: string, action: DrawAction, token?: string, seat?: Color): PublicGame {
@@ -234,7 +243,7 @@ export class GameStore {
     else game.declineDraw(acting);
 
     this.publish(game);
-    return game.toPublic();
+    return this.publicGame(game);
   }
 
   delete(id: string): void {
@@ -289,7 +298,7 @@ export class GameStore {
 
   private publish(game: Game): void {
     this.storage?.save(game.toSnapshot());
-    this.emit({ type: 'game', game: game.toPublic() });
+    this.emit({ type: 'game', game: this.publicGame(game) });
   }
 
   private restore(): void {

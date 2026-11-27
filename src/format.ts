@@ -1,4 +1,4 @@
-import type { Game } from './game.js';
+import type { Game, NoteVisibility } from './game.js';
 import type { Color, PublicGame } from './shared/protocol.js';
 import { describeTimeControl, formatClockLine } from './shared/timeControl.js';
 
@@ -36,8 +36,18 @@ function legalMovesLine(game: PublicGame): string {
   return `Legal moves (${game.legalMoves.length}): ${shown.join(', ')}${suffix}`;
 }
 
-export function formatState(game: Game, options: { includePgn?: boolean } = {}): string {
-  const state = game.toPublic();
+export interface FormatStateOptions {
+  includePgn?: boolean;
+  /**
+   * Which move notes the text state may contain: `true` for all, `false` for
+   * none, or a colour for that player's notes only. Defaults to none, so a view
+   * never leaks reasoning unless the caller opted in.
+   */
+  revealNotes?: NoteVisibility;
+}
+
+export function formatState(game: Game, options: FormatStateOptions = {}): string {
+  const state = game.toPublic({ revealNotes: options.revealNotes ?? false });
   const lastMove = state.lastMove
     ? `${state.lastMove.san} (${state.lastMove.from}${state.lastMove.to})`
     : 'none';

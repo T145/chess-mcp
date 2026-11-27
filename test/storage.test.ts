@@ -80,8 +80,12 @@ describe('GameStorage', () => {
     const reloaded = new GameStore({ dataDir: dir });
     const game = reloaded.getPublic(created.game.id);
     expect(game.moves.map((move) => move.san)).toEqual(['e4']);
-    expect(game.moves[0]?.note).toBe('King pawn, eyes d5');
-    expect(game.pgn).toContain('1. e4 {King pawn, eyes d5}');
+    // Notes are saved with the move but stay hidden while the game is live.
+    expect(game.moves[0]?.note).toBeUndefined();
+    expect(game.pgn).not.toContain('King pawn');
+    expect(reloaded.get(created.game.id).toSnapshot().moves[0]?.note).toBe(
+      'King pawn, eyes d5'
+    );
     expect(game.seats).toEqual({
       white: { kind: 'human', name: 'Alice' },
       black: { kind: 'human', name: 'Bob' }

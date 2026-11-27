@@ -37,6 +37,20 @@ describe('MCP text formatting', () => {
     expect(formatState(game(), { includePgn: false })).not.toContain('Clock:');
   });
 
+  it('hides move notes unless the caller asks for a seat', () => {
+    const g = game();
+    g.applyMove('e4', Date.now(), 'Private plan');
+
+    expect(formatState(g, { includePgn: false })).not.toContain('Private plan');
+    expect(formatState(g, { includePgn: false, revealNotes: 'black' })).not.toContain(
+      'Private plan'
+    );
+    expect(formatState(g, { includePgn: false, revealNotes: 'white' })).toContain(
+      'Last move note: Private plan'
+    );
+    expect(formatState(g, { revealNotes: true })).toContain('1. e4 {Private plan}');
+  });
+
   it('describes a timeout result', () => {
     const timed = game({ ...RAPID, baseMs: 1_000, incrementMs: 0 });
     timed.settleClock(Date.now() + 2_000);

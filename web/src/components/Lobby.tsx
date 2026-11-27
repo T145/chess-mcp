@@ -2,6 +2,7 @@ import { useState } from 'react';
 
 import type { Color, PublicGame } from '../../../src/shared/protocol';
 import { api } from '../lib/api';
+import { BRAND_MARK } from '../lib/brand';
 import { mergeGame, useLive } from '../lib/live';
 import {
   getIdentity,
@@ -193,9 +194,13 @@ export function Lobby({ onNewGame }: { onNewGame: () => void }) {
 
         {sorted.length === 0 ? (
           <div className="panel flex flex-col items-center px-6 py-16 text-center">
-            <div className="mb-3 text-5xl" aria-hidden>
-              ♞
-            </div>
+            <img
+              src={BRAND_MARK.src}
+              alt=""
+              width={56}
+              height={56}
+              className="mb-3 h-14 w-14"
+            />
             <h3 className="text-lg font-semibold">No games yet</h3>
             <p className="mt-1 max-w-sm text-sm text-muted">
               Create a board as White, Black, or an open hotseat. Then paste the invite prompt into

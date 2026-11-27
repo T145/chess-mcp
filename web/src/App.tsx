@@ -4,6 +4,7 @@ import { GameView } from './components/GameView';
 import { PlusIcon, WifiIcon, WifiOffIcon } from './components/Icons';
 import { Lobby } from './components/Lobby';
 import { NewGameDialog } from './components/NewGameDialog';
+import { BRAND_MARK } from './lib/brand';
 import { startLive, useLive } from './lib/live';
 import { Link, usePathname } from './lib/router';
 
@@ -31,9 +32,13 @@ export function App() {
       <header className="sticky top-0 z-20 shrink-0 border-b border-line/80 bg-surface/85 backdrop-blur-md">
         <div className="mx-auto flex h-14 max-w-7xl items-center gap-3 px-4 sm:px-6">
           <Link to="/" className="flex items-center gap-2.5">
-            <span className="flex h-8 w-8 items-center justify-center rounded-lg border border-accent/40 bg-accent/15 text-lg text-accent-strong">
-              ♞
-            </span>
+            <img
+              src={BRAND_MARK.src}
+              alt=""
+              width={32}
+              height={32}
+              className="h-8 w-8 rounded-lg"
+            />
             <span className="text-sm font-semibold tracking-tight sm:text-base">Chess MCP</span>
           </Link>
 

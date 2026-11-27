@@ -119,8 +119,8 @@ function arrowGeometry(
   };
 }
 
-const LIGHT_SQUARE = '#ebecd0';
-const DARK_SQUARE = '#739552';
+const LIGHT_SQUARE = '#f0d9b5';
+const DARK_SQUARE = '#b58863';
 const SQUARE_SET = new Set<string>(SQUARES);
 
 function isSquare(value: string): value is Square {

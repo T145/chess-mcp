@@ -63,6 +63,41 @@ describe('GameStore', () => {
     expect(() => store.join(id, 'white', 'Mallory', 'human')).toThrow(/already claimed/i);
   });
 
+  it('swaps seats and keeps each player’s token with them', () => {
+    const store = new GameStore();
+    const { id, whiteToken, blackToken } = seatedGame(store);
+
+    const swapped = store.swapSeats(id, whiteToken);
+
+    expect(swapped.seat).toBe('black');
+    expect(swapped.game.seats.white).toEqual({ kind: 'human', name: 'Bob' });
+    expect(swapped.game.seats.black).toEqual({ kind: 'human', name: 'Alice' });
+    expect(store.playerSeat(id, whiteToken)).toBe('black');
+    expect(store.playerSeat(id, blackToken)).toBe('white');
+    expect(swapped.game.pgn).toContain('[White "Bob"]');
+    expect(swapped.game.pgn).toContain('[Black "Alice"]');
+
+    // Alice now has Black, so she cannot move first.
+    expect(() => store.move(id, 'e4', whiteToken)).toThrow(/white's turn/i);
+    store.move(id, 'e4', blackToken);
+    expect(store.getPublic(id).moves[0]?.san).toBe('e4');
+  });
+
+  it('refuses to swap seats once the first move is played', () => {
+    const store = new GameStore();
+    const { id, whiteToken } = seatedGame(store);
+    store.move(id, 'e4', whiteToken);
+
+    expect(() => store.swapSeats(id, whiteToken)).toThrow(/before the first move/i);
+  });
+
+  it('refuses to swap seats with an invalid token', () => {
+    const store = new GameStore();
+    const { id } = seatedGame(store);
+
+    expect(() => store.swapSeats(id, 'not-a-token')).toThrow(/invalid seat token/i);
+  });
+
   it('handles resign and draw actions with seat tokens', () => {
     const store = new GameStore();
     const { id, whiteToken, blackToken } = seatedGame(store);

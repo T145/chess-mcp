@@ -5,7 +5,8 @@ import type {
   DrawAction,
   JoinGameResponse,
   MoveInput,
-  PublicGame
+  PublicGame,
+  SwapSeatsResponse
 } from '../../../src/shared/protocol';
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -58,6 +59,13 @@ export const api = {
     return request(`/api/games/${encodeURIComponent(id)}/join`, {
       method: 'POST',
       body: JSON.stringify(body)
+    });
+  },
+
+  swapSeats(id: string, token: string): Promise<SwapSeatsResponse> {
+    return request(`/api/games/${encodeURIComponent(id)}/swap-seats`, {
+      method: 'POST',
+      body: JSON.stringify({ token })
     });
   },
 

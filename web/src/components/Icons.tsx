@@ -40,6 +40,14 @@ export function FlipIcon(props: IconProps) {
   );
 }
 
+export function SwapIcon(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M4 8h13l-3-3M20 16H7l3 3" />
+    </svg>
+  );
+}
+
 export function FlagIcon(props: IconProps) {
   return (
     <svg {...base(props)}>

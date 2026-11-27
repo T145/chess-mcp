@@ -7,7 +7,12 @@ import { describe, expect, it } from 'vitest';
 
 import { createApp } from '../src/server/app.js';
 import { attachWebSocket, closeWebSocketServer } from '../src/server/ws.js';
-import type { CreateGameResponse, JoinGameResponse, PublicGame } from '../src/shared/protocol.js';
+import type {
+  CreateGameResponse,
+  JoinGameResponse,
+  PublicGame,
+  SwapSeatsResponse
+} from '../src/shared/protocol.js';
 import { GameStore } from '../src/store.js';
 
 interface TestServer {
@@ -179,6 +184,51 @@ describe('HTTP API and WebSocket', () => {
       const message = await update;
       expect((message.game as PublicGame).moves[0]?.san).toBe('e4');
       socket.close();
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('swaps seats before the first move and reports the new seat', async () => {
+    const server = await startServer();
+    try {
+      const created = await post<CreateGameResponse>(server.base, '/api/games', {
+        name: 'Alice',
+        color: 'white'
+      });
+      const gameId = created.body.game.id;
+      const joined = await post<JoinGameResponse>(server.base, `/api/games/${gameId}/join`, {
+        name: 'Bob',
+        seat: 'black'
+      });
+
+      const swapped = await post<SwapSeatsResponse>(
+        server.base,
+        `/api/games/${gameId}/swap-seats`,
+        { token: joined.body.token }
+      );
+
+      expect(swapped.status).toBe(200);
+      expect(swapped.body.seat).toBe('white');
+      expect(swapped.body.game.seats.white.name).toBe('Bob');
+      expect(swapped.body.game.seats.black.name).toBe('Alice');
+
+      // Bob's existing token now controls White.
+      const played = await post<{ game: PublicGame }>(
+        server.base,
+        `/api/games/${gameId}/moves`,
+        { move: 'd4', token: joined.body.token }
+      );
+      expect(played.status).toBe(200);
+      expect(played.body.game.moves[0]?.san).toBe('d4');
+
+      const afterMove = await post<{ error: string }>(
+        server.base,
+        `/api/games/${gameId}/swap-seats`,
+        { token: created.body.token }
+      );
+      expect(afterMove.status).toBe(400);
+      expect(afterMove.body.error).toMatch(/before the first move/i);
     } finally {
       await server.close();
     }

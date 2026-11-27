@@ -3,7 +3,12 @@ import { useState } from 'react';
 import type { Color, PublicGame } from '../../../src/shared/protocol';
 import { api } from '../lib/api';
 import { mergeGame, useLive } from '../lib/live';
-import { getPlayerName, saveIdentity } from '../lib/player';
+import {
+  getIdentity,
+  getPlayerName,
+  saveIdentity,
+  type PlayerIdentity
+} from '../lib/player';
 import { Link, navigate } from '../lib/router';
 import {
   activeColor,
@@ -12,7 +17,7 @@ import {
   seatKindLabel,
   seatLabel
 } from '../lib/status';
-import { ChevronRightIcon, PlusIcon } from './Icons';
+import { ChevronRightIcon, PlusIcon, SwapIcon } from './Icons';
 
 function SeatRow({ game, color }: { game: PublicGame; color: Color }) {
   const seat = game.seats[color];
@@ -39,15 +44,19 @@ function SeatRow({ game, color }: { game: PublicGame; color: Color }) {
 interface GameCardProps {
   game: PublicGame;
   onJoin: (game: PublicGame, seat: Color) => void;
-  joining: boolean;
+  onSwap: (game: PublicGame, identity: PlayerIdentity) => void;
+  busy: boolean;
 }
 
-function GameCard({ game, onJoin, joining }: GameCardProps) {
+function GameCard({ game, onJoin, onSwap, busy }: GameCardProps) {
   const openSeats = (['white', 'black'] as const).filter(
     (color) => game.seats[color].kind === 'open'
   );
   const finished = game.status.phase !== 'playing';
   const result = resultLabel(game);
+  const identity = getIdentity(game.id);
+  // Offered only while the game is still untouched, so nobody flips sides mid-game.
+  const canSwap = identity !== null && !finished && game.moves.length === 0;
 
   return (
     <article className="panel fade-up flex flex-col gap-3 p-4">
@@ -79,12 +88,24 @@ function GameCard({ game, onJoin, joining }: GameCardProps) {
             key={seat}
             type="button"
             className="btn btn-secondary flex-1 py-1.5 text-xs"
-            disabled={joining}
+            disabled={busy}
             onClick={() => onJoin(game, seat)}
           >
             Join {seat}
           </button>
         ))}
+        {canSwap && (
+          <button
+            type="button"
+            className="btn btn-ghost py-1.5 text-xs"
+            disabled={busy}
+            title="Swap seats before the first move"
+            onClick={() => onSwap(game, identity)}
+          >
+            <SwapIcon className="h-3.5 w-3.5" />
+            Swap colors
+          </button>
+        )}
         <Link to={`/game/${game.id}`} className="btn btn-primary flex-1 py-1.5 text-xs">
           {finished ? 'Review' : openSeats.length > 0 ? 'Watch' : 'Open game'}
           <ChevronRightIcon className="h-3.5 w-3.5" />
@@ -96,14 +117,14 @@ function GameCard({ game, onJoin, joining }: GameCardProps) {
 
 export function Lobby({ onNewGame }: { onNewGame: () => void }) {
   const { games, connected } = useLive();
-  const [joining, setJoining] = useState<string | null>(null);
+  const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const sorted = Object.values(games).toSorted((a, b) => b.updatedAt - a.updatedAt);
   const active = sorted.filter((game) => game.status.phase === 'playing').length;
 
   const join = async (game: PublicGame, seat: Color): Promise<void> => {
-    setJoining(game.id);
+    setPending(game.id);
     setError(null);
     try {
       const result = await api.joinGame(game.id, { name: getPlayerName(), seat });
@@ -113,7 +134,21 @@ export function Lobby({ onNewGame }: { onNewGame: () => void }) {
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
-      setJoining(null);
+      setPending(null);
+    }
+  };
+
+  const swap = async (game: PublicGame, identity: PlayerIdentity): Promise<void> => {
+    setPending(game.id);
+    setError(null);
+    try {
+      const result = await api.swapSeats(game.id, identity.token);
+      saveIdentity(game.id, { seat: result.seat, token: identity.token });
+      mergeGame(result.game);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setPending(null);
     }
   };
 
@@ -180,7 +215,8 @@ export function Lobby({ onNewGame }: { onNewGame: () => void }) {
                 key={game.id}
                 game={game}
                 onJoin={(target, seat) => void join(target, seat)}
-                joining={joining === game.id}
+                onSwap={(target, identity) => void swap(target, identity)}
+                busy={pending === game.id}
               />
             ))}
           </div>

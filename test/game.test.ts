@@ -126,6 +126,20 @@ describe('Game rules', () => {
     expect(game.toPublic().pgn).toContain('1. e4');
   });
 
+  it('swaps seats before the first move and refuses afterwards', () => {
+    const game = makeGame();
+
+    game.swapSeats();
+
+    expect(game.toPublic().seats.white).toEqual({ kind: 'human', name: 'Black Player' });
+    expect(game.toPublic().seats.black).toEqual({ kind: 'human', name: 'White Player' });
+    expect(game.toPublic().pgn).toContain('[White "Black Player"]');
+    expect(game.toPublic().pgn).toContain('[Black "White Player"]');
+
+    game.applyMove('e4');
+    expect(() => game.swapSeats()).toThrow(/before the first move/i);
+  });
+
   it('leaves the PGN result open while the game is running', () => {
     const game = makeGame();
     game.applyMove('e4');

@@ -35,6 +35,12 @@ export interface JoinedGame {
   token: string;
 }
 
+export interface SwappedSeats {
+  game: PublicGame;
+  /** The seat the caller holds after the swap. */
+  seat: Color;
+}
+
 export type StoreEvent =
   | { type: 'game'; game: PublicGame }
   | { type: 'deleted'; id: string };
@@ -149,6 +155,20 @@ export class GameStore {
     game.syncPgnHeaders();
     this.publish(game);
     return { game: game.toPublic(), seat, token };
+  }
+
+  /**
+   * Swap the white and black seats. Each seat keeps its name and token hash, so
+   * both players simply change colour and keep the token they already hold.
+   */
+  swapSeats(id: string, token: string): SwappedSeats {
+    const game = this.get(id);
+    const before = this.seatForToken(game, token);
+    if (!before) throw new UserError('Invalid seat token for this game.');
+
+    game.swapSeats();
+    this.publish(game);
+    return { game: game.toPublic(), seat: before === 'white' ? 'black' : 'white' };
   }
 
   move(id: string, move: MoveInput, token?: string): PublicGame {

@@ -13,7 +13,7 @@ import {
 import { Link, navigate } from '../lib/router';
 import { activeColor, describeStatus, resultLabel } from '../lib/status';
 import { Board } from './Board';
-import { CheckIcon, CopyIcon, FlipIcon, FlagIcon, HandshakeIcon, TrashIcon } from './Icons';
+import { CheckIcon, CopyIcon, FlipIcon, FlagIcon, HandshakeIcon, SwapIcon, TrashIcon } from './Icons';
 import { InvitePanel } from './InvitePanel';
 import { MoveList } from './MoveList';
 import { PlayerCard } from './PlayerCard';
@@ -109,6 +109,9 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
   const topColor: Color = orientation === 'white' ? 'black' : 'white';
   const bottomColor: Color = opposite(topColor);
   const material = useMemo(() => readMaterial(game.fen, game.moves), [game.fen, game.moves]);
+  // Colors can only be exchanged before the first move, and only by a seated player.
+  const canSwapColors =
+    identity !== null && game.status.phase === 'playing' && game.moves.length === 0;
 
   const makeMove = useCallback(
     (move: MoveInput): void => {
@@ -130,6 +133,27 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
     },
     [game.id, run]
   );
+
+  const swapColors = useCallback((): void => {
+    if (!identity) return;
+    const { token } = identity;
+    void (async () => {
+      setBusy(true);
+      setError(null);
+      try {
+        const result = await api.swapSeats(game.id, token);
+        const next = { seat: result.seat, token };
+        saveIdentity(game.id, next);
+        setIdentity(next);
+        setOrientation(result.seat);
+        mergeGame(result.game);
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      } finally {
+        setBusy(false);
+      }
+    })();
+  }, [game.id, identity]);
 
   const draw = useCallback(
     (action: DrawAction): void => {
@@ -203,6 +227,18 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
           <span className="chip chip-llm">LLM game</span>
         )}
         <div className="ml-auto flex items-center gap-2">
+          {canSwapColors && (
+            <button
+              type="button"
+              className="btn btn-ghost px-2"
+              onClick={swapColors}
+              disabled={busy}
+              title="Swap seats before the first move"
+            >
+              <SwapIcon className="h-4 w-4" />
+              Swap colors
+            </button>
+          )}
           <button
             type="button"
             className="btn btn-ghost px-2"

@@ -14,7 +14,8 @@ import type {
   DrawRequest,
   JoinSeatRequest,
   MoveRequest,
-  ResignRequest
+  ResignRequest,
+  SwapSeatsRequest
 } from '../shared/protocol.js';
 import type { GameStore } from '../store.js';
 
@@ -50,6 +51,10 @@ const resignSchema = z.object({
   token: z.string().min(1).optional(),
   seat: z.enum(['white', 'black']).optional()
 }) satisfies z.ZodType<ResignRequest>;
+
+const swapSeatsSchema = z.object({
+  token: z.string().min(1)
+}) satisfies z.ZodType<SwapSeatsRequest>;
 
 function parseBody<T>(schema: z.ZodType<T>, body: unknown): T {
   const result = schema.safeParse(body ?? {});
@@ -100,6 +105,11 @@ export function createApp(store: GameStore): AppBundle {
     const body = parseBody(joinSeatSchema, req.body);
     const joined = store.join(req.params.id, body.seat, body.name, 'human');
     res.json(joined);
+  });
+
+  app.post('/api/games/:id/swap-seats', (req, res) => {
+    const body = parseBody(swapSeatsSchema, req.body);
+    res.json(store.swapSeats(req.params.id, body.token));
   });
 
   app.post('/api/games/:id/moves', (req, res) => {

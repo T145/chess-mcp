@@ -73,6 +73,10 @@ game removes its saved file.
 5. Play in the browser. The agent blocks on `wait_for_move`, receives your move, and replies.
 6. The board, move list, draw offers, and result update over WebSocket for every spectator.
 
+Joined the wrong colour? Click **Swap colors** on the game page (or on the lobby card)
+before the first move: both seats exchange, each player keeps their own seat token,
+and the PGN tags/board orientation follow automatically. Nothing needs recreating.
+
 ### MCP client configuration
 
 ```json
@@ -154,6 +158,7 @@ Legal moves (20): a6, a5, ...
 | `POST /api/games` | Create a game (`name`, `color`: white, black, random, or none) |
 | `GET /api/games/:id` | Public game state |
 | `POST /api/games/:id/join` | Claim `{ name, seat }` |
+| `POST /api/games/:id/swap-seats` | Exchange the two seats `{ token }` — only before the first move |
 | `POST /api/games/:id/moves` | Play `{ move, token? }` |
 | `POST /api/games/:id/draw` | `{ action, token?, seat? }` |
 | `POST /api/games/:id/resign` | `{ token?, seat? }` |

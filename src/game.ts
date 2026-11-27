@@ -229,6 +229,26 @@ export class Game {
     this.chess.setHeader('Result', pgnResult(this.status));
   }
 
+  /**
+   * Exchange the two seats, keeping each player's name and seat token with
+   * them. Only allowed before the first move, so nobody changes sides in the
+   * middle of a game.
+   */
+  swapSeats(): void {
+    if (!this.isPlaying) {
+      throw new UserError(`The game is already over (${this.status.reason}).`);
+    }
+    if (this.moves.length > 0) {
+      throw new UserError('Colors can only be swapped before the first move.');
+    }
+
+    const white = this.seats.white;
+    this.seats.white = this.seats.black;
+    this.seats.black = white;
+    this.syncPgnHeaders();
+    this.updatedAt = Date.now();
+  }
+
   applyMove(input: MoveInput): MoveRecord {
     if (!this.isPlaying) {
       throw new UserError(`The game is over (${this.status.reason}). No more moves are allowed.`);

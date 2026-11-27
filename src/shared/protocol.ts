@@ -91,6 +91,16 @@ export interface JoinGameResponse {
   token: string;
 }
 
+export interface SwapSeatsRequest {
+  token: string;
+}
+
+export interface SwapSeatsResponse {
+  game: PublicGame;
+  /** The seat the caller holds after the swap. */
+  seat: Color;
+}
+
 export interface ApiError {
   error: string;
 }

@@ -1,27 +1,81 @@
 import { useEffect, useRef } from 'react';
 
-import type { MoveRecord, PublicGame } from '../../../src/shared/protocol';
+import type { MoveQuality, MoveRecord, PublicGame } from '../../../src/shared/protocol';
+import { QUALITY_STYLES } from '../lib/review';
 import { movePairs } from '../lib/status';
 
-function MoveCell({ move }: { move: MoveRecord | null }) {
+interface MoveCellProps {
+  move: MoveRecord | null;
+  ply: number;
+  quality: MoveQuality | undefined;
+  selected: boolean;
+  onSelect: ((ply: number) => void) | undefined;
+}
+
+function MoveCell({ move, ply, quality, selected, onSelect }: MoveCellProps) {
   if (!move) return <span />;
-  if (!move.note) return <span className="text-ink">{move.san}</span>;
+
+  const style = quality ? QUALITY_STYLES[quality] : null;
+  const content = (
+    <>
+      <span
+        className={
+          move.note
+            ? 'border-b border-dotted border-accent/60 text-ink'
+            : selected
+              ? 'font-semibold text-accent-strong'
+              : 'text-ink'
+        }
+      >
+        {move.san}
+      </span>
+      {move.note && (
+        <span className="ml-0.5 text-accent-strong" aria-hidden>
+          •
+        </span>
+      )}
+      {style?.symbol && (
+        <span className={`ml-0.5 text-[11px] font-bold ${style.className}`} aria-hidden>
+          {style.symbol}
+        </span>
+      )}
+    </>
+  );
+
+  const label = `${move.san}${quality ? ` (${QUALITY_STYLES[quality].label})` : ''}`;
+
+  if (!onSelect) {
+    return (
+      <span className="cursor-help" title={move.note} aria-label={move.note ? `${label}: ${move.note}` : label}>
+        {content}
+      </span>
+    );
+  }
 
   return (
-    <span
-      className="cursor-help border-b border-dotted border-accent/60 text-ink"
+    <button
+      type="button"
+      className={`-mx-1 rounded px-1 text-left transition-colors hover:bg-white/10 ${
+        selected ? 'bg-accent/15' : ''
+      }`}
       title={move.note}
-      aria-label={`${move.san}: ${move.note}`}
+      aria-label={move.note ? `${label}: ${move.note}` : label}
+      onClick={() => onSelect(ply)}
     >
-      {move.san}
-      <span className="ml-0.5 text-accent-strong" aria-hidden>
-        •
-      </span>
-    </span>
+      {content}
+    </button>
   );
 }
 
-export function MoveList({ game }: { game: PublicGame }) {
+interface MoveListProps {
+  game: PublicGame;
+  /** Move quality keyed by 1-based ply. */
+  qualities?: Partial<Record<number, MoveQuality>>;
+  selectedPly?: number | null;
+  onSelectPly?: (ply: number) => void;
+}
+
+export function MoveList({ game, qualities, selectedPly, onSelectPly }: MoveListProps) {
   const rows = movePairs(game.moves);
   const listRef = useRef<HTMLDivElement>(null);
   const hasAgent = game.seats.white.kind === 'llm' || game.seats.black.kind === 'llm';
@@ -57,8 +111,20 @@ export function MoveList({ game }: { game: PublicGame }) {
               }`}
             >
               <span className="text-muted">{row.number}.</span>
-              <MoveCell move={row.white} />
-              <MoveCell move={row.black} />
+              <MoveCell
+                move={row.white}
+                ply={index * 2 + 1}
+                quality={qualities?.[index * 2 + 1]}
+                selected={selectedPly === index * 2 + 1}
+                onSelect={onSelectPly}
+              />
+              <MoveCell
+                move={row.black}
+                ply={index * 2 + 2}
+                quality={qualities?.[index * 2 + 2]}
+                selected={selectedPly === index * 2 + 2}
+                onSelect={onSelectPly}
+              />
             </div>
           ))
         )}

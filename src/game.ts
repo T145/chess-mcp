@@ -156,6 +156,7 @@ function publicMoveRecord(move: MoveRecord, revealNotes: NoteVisibility): MoveRe
     to: move.to,
     color: move.color,
     ...(move.promotion ? { promotion: move.promotion } : {}),
+    ...(move.clocks ? { clocks: { ...move.clocks } } : {}),
     ...(move.note && maySeeNote(move, revealNotes) ? { note: move.note } : {})
   };
 }
@@ -417,6 +418,9 @@ export class Game {
     this.drawOffer = null;
     this.status = statusFromPosition(this.chess);
     this.settleTurnClock(record.color, now);
+    if (this.clock) {
+      record.clocks = { whiteMs: this.clock.whiteMs, blackMs: this.clock.blackMs };
+    }
     this.syncPgnHeaders();
     this.updatedAt = now;
     return { ...record };

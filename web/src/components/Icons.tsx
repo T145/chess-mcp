@@ -113,3 +113,19 @@ export function ChevronRightIcon(props: IconProps) {
     </svg>
   );
 }
+
+export function SkipBackIcon(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M6 5v14M18 6l-8 6 8 6" />
+    </svg>
+  );
+}
+
+export function SkipForwardIcon(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M18 5v14M6 6l8 6-8 6" />
+    </svg>
+  );
+}

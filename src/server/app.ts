@@ -8,13 +8,16 @@ import * as z from 'zod/v4';
 
 import { UserError } from '../errors.js';
 import { createMcpServer } from '../mcp.js';
+import type { ReviewService } from '../review/service.js';
 import type {
   Color,
   CreateGameRequest,
   DrawRequest,
+  EngineStatus,
   JoinSeatRequest,
   MoveRequest,
   ResignRequest,
+  ReviewState,
   SwapSeatsRequest
 } from '../shared/protocol.js';
 import { findTimeControlPreset, timeControlIds, toClockConfig } from '../shared/timeControl.js';
@@ -85,10 +88,38 @@ export interface AppBundle {
   mcpHandler: ReturnType<typeof createMcpHandler>;
 }
 
-export function createApp(store: GameStore): AppBundle {
+export interface AppOptions {
+  review?: ReviewService | null;
+}
+
+function unavailableEngineStatus(): EngineStatus {
+  return {
+    phase: 'unavailable',
+    name: null,
+    version: null,
+    path: null,
+    managed: false,
+    depth: 14,
+    download: null,
+    error: 'Engine review is not enabled on this server.'
+  };
+}
+
+function unavailableReviewState(gameId: string, moveCount: number): ReviewState {
+  return {
+    gameId,
+    phase: 'failed',
+    done: 0,
+    total: moveCount + 1,
+    review: null,
+    error: 'Engine review is not enabled on this server.'
+  };
+}
+
+export function createApp(store: GameStore, options: AppOptions = {}): AppBundle {
   const app = createMcpExpressApp();
 
-  const mcpHandler = createMcpHandler(() => createMcpServer(store));
+  const mcpHandler = createMcpHandler(() => createMcpServer(store, options.review ?? null));
   const nodeHandler = toNodeHandler(mcpHandler);
   app.all('/mcp', (req, res) => {
     void nodeHandler(req, res, req.body);
@@ -142,6 +173,36 @@ export function createApp(store: GameStore): AppBundle {
     const body = parseBody(resignSchema, req.body);
     const game = store.resign(req.params.id, body.token, body.seat);
     res.json({ game });
+  });
+
+  app.get('/api/engine', (_req, res) => {
+    res.json({ engine: options.review?.engineStatus() ?? unavailableEngineStatus() });
+  });
+
+  app.post('/api/engine/install', (_req, res) => {
+    if (!options.review) {
+      res.status(503).json({ error: 'Engine review is not enabled on this server.' });
+      return;
+    }
+    options.review.retryEngineInstall();
+    res.status(202).json({ engine: options.review.engineStatus() });
+  });
+
+  app.get('/api/games/:id/review', (req, res) => {
+    if (!options.review) {
+      const game = store.getPublic(req.params.id);
+      res.json({ review: unavailableReviewState(game.id, game.moves.length) });
+      return;
+    }
+    res.json({ review: options.review.state(req.params.id) });
+  });
+
+  app.post('/api/games/:id/review', (req, res) => {
+    if (!options.review) {
+      res.status(503).json({ error: 'Engine review is not enabled on this server.' });
+      return;
+    }
+    res.status(202).json({ review: options.review.start(req.params.id) });
   });
 
   app.delete('/api/games/:id', (req, res) => {

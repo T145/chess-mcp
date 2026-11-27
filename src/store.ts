@@ -74,7 +74,7 @@ function openSeat(): SeatState {
 export class GameStore {
   private readonly games = new Map<string, Game>();
   private readonly listeners = new Set<Listener>();
-  private readonly storage: GameStorage | null;
+  readonly storage: GameStorage | null;
   private ticker: ReturnType<typeof setInterval> | null = null;
 
   constructor(options: GameStoreOptions = {}) {

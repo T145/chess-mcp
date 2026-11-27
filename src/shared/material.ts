@@ -37,6 +37,24 @@ function pieceFromChar(char: string): MaterialPiece | null {
   return null;
 }
 
+/**
+ * Static material balance of a position in pawns, positive for White. Unlike
+ * {@link readMaterial} this only looks at the FEN, so it also handles promotions
+ * and mid-game positions without needing the move list.
+ */
+export function materialBalance(fen: string): number {
+  const placement = fen.split(' ')[0] ?? '';
+  let balance = 0;
+
+  for (const char of placement) {
+    const piece = pieceFromChar(char);
+    if (!piece) continue;
+    balance += char === char.toUpperCase() ? MATERIAL_VALUES[piece] : -MATERIAL_VALUES[piece];
+  }
+
+  return balance;
+}
+
 /** Counts the pieces each colour has on the board in the FEN placement field. */
 function countOnBoard(placement: string): Record<Color, Record<MaterialPiece, number>> {
   const counts: Record<Color, Record<MaterialPiece, number>> = {

@@ -6,6 +6,7 @@ A local chess web app **and** MCP server for humans vs LLMs and LLM vs LLM games
 - Invite any MCP-capable agent (Cline, Claude Code, etc.) into the other seat with one copy-paste prompt.
 - Agents use **Streamable HTTP** MCP tools to join, wait for your move, and reply.
 - Two agents can play each other while you spectate in real time.
+- Finished games get a Stockfish review: accuracy, move labels, and an eval bar.
 - Everything runs on `127.0.0.1`; there is no cloud dependency and no account system.
 
 ## Requirements
@@ -38,7 +39,10 @@ endpoint from one process.
 chess-mcp [options]
 
 --port <number>   Port to listen on (default: 3000, env: PORT)
---data-dir <dir>  Directory for saved games (env: CHESS_MCP_DATA_DIR)
+--data-dir <dir>  Directory for saved games and the engine (env: CHESS_MCP_DATA_DIR)
+--engine <path>   Use a local Stockfish binary (env: CHESS_MCP_ENGINE)
+--engine-depth <n>  Analysis depth per position (default: 14)
+--no-engine-download  Never download Stockfish automatically
 --dev             Serve the React app with Vite middleware (HMR, no build)
 -h, --help        Show help
 ```
@@ -49,7 +53,8 @@ The server always binds to `127.0.0.1`. Open the printed URL in a browser.
 
 Games are written to disk after every change (create, join, move, draw, resign),
 so the lobby is restored the next time the server starts. Each game is a small
-JSON file under `<data-dir>/games/<game-id>.json`.
+JSON file under `<data-dir>/games/<game-id>.json`; completed reviews are stored
+next to them under `<data-dir>/reviews/<game-id>.json`.
 
 Default locations:
 
@@ -158,6 +163,45 @@ Seat tokens are returned once by `create_game`/`join_game`. Keep them in the
 conversation and pass them on every mutating tool call. In a hotseat game
 (both seats open) tokens are not required.
 
+## Game review
+
+When a game ends, the server analyses every position with Stockfish and stores a
+review alongside the game. Open the **Review** tab on the game page (or call the
+`review_game` MCP tool) to see:
+
+- accuracy for both players, plus counts of brilliant / great / best / excellent /
+  good / inaccuracy / mistake / blunder moves;
+- an evaluation graph and a **vertical eval bar to the left of the board**;
+- move badges plus the complete annotated move list; click any move (or use the
+  navigation buttons) to step through the game on the board, with the clock as
+  it stood after that move.
+
+### Engine setup
+
+The server looks for Stockfish in this order:
+
+1. `--engine <path>` or `CHESS_MCP_ENGINE`;
+2. `stockfish` on `PATH`;
+3. common install folders (`/usr/games`, `/usr/bin`, `/usr/local/bin`,
+   `/opt/homebrew/bin`, `%LOCALAPPDATA%\Stockfish`, `Program Files\Stockfish`);
+4. a previously downloaded binary in `<data-dir>/engine/sf_19/`.
+
+If nothing is found, the server automatically downloads the official
+**Stockfish 19** release from GitHub on first boot (about 80 MB, universal binary
+that detects AVX2/AVX-512 etc. itself). Downloads are pinned to the release asset
+name, byte size, and SHA-256 digest, verified before the binary is extracted and
+run. The install is background work: the web app and MCP endpoint start
+immediately, and review jobs queue until the engine is ready. Pass
+`--no-engine-download` to disable this and use `--engine` for a local build.
+
+The engine is GPL-3.0 software and is **not** bundled in the npm package: it is
+fetched from the official release (or supplied by you) into your data directory.
+The project itself stays Apache-2.0.
+
+Analysis uses depth 14 and MultiPV 2 by default, one review at a time. Labels are
+heuristic (win-probability loss, only-move detection, and a material-sacrifice
+check for brilliant moves), not a clone of Chess.com's proprietary algorithm.
+
 ## MCP tools
 
 | Tool | Purpose |
@@ -170,6 +214,7 @@ conversation and pass them on every mutating tool call. In a hotseat game
 | `wait_for_move` | Pass your seat token: returns immediately when it is your turn, otherwise long-polls until the opponent moves, the game ends, or a timeout (1–120s) expires. |
 | `draw` | `offer`, `accept`, or `decline` a draw. |
 | `resign` | Resign. |
+| `review_game` | Analyze a finished game with Stockfish and return accuracy, move labels, and key moments. Waits briefly for the engine download/analysis. |
 
 Game state includes a text board, so an agent can play without extra round trips:
 
@@ -203,8 +248,12 @@ Legal moves (20): a6, a5, ...
 | `POST /api/games/:id/moves` | Play `{ move, token? }` |
 | `POST /api/games/:id/draw` | `{ action, token?, seat? }` |
 | `POST /api/games/:id/resign` | `{ token?, seat? }` |
+| `GET /api/engine` | Engine status: available / installing / unavailable / failed, download progress, depth |
+| `POST /api/engine/install` | Retry the automatic Stockfish install |
+| `GET /api/games/:id/review` | Review state, loading a saved review if present |
+| `POST /api/games/:id/review` | Start (or reuse) a review; `400` while the game is running |
 | `DELETE /api/games/:id` | Delete a game |
-| `GET /ws` | WebSocket: `snapshot`, `game`, `deleted`, `hello` messages |
+| `GET /ws` | WebSocket: `snapshot`, `game`, `deleted`, `review`, `engine`, `hello` messages |
 
 ## Architecture
 
@@ -218,7 +267,8 @@ Express 5 process (127.0.0.1:3000)
   ├─ /ws         WebSocket live updates (server → client)
   └─ /           built React SPA
         │
-        └─ shared in-memory GameStore (chess.js rules, seats, tokens)
+        ├─ shared in-memory GameStore (chess.js rules, seats, tokens)
+        └─ ReviewService → Stockfish (UCI child process, auto-downloaded)
 ```
 
 Key points:
@@ -232,25 +282,30 @@ Key points:
 - **Saved games.** Every mutation rewrites `<data-dir>/games/<game-id>.json`, and
   saved games are reloaded at startup. The store still caps at 200 in-memory
   games and evicts the oldest finished ones (their saved files are removed too).
-- **No clocks, engine analysis, ratings, accounts, chat, or remote access** in
-  v1. Untimed correspondence-style play is intentional: LLM response latency
-  makes clocks awkward.
+- **Reviews are a separate artifact.** Analysis runs in one background job at a
+  time, results are cached in memory and `<data-dir>/reviews/`, and progress is
+  broadcast over the WebSocket. A saved review is reused after a restart.
+- **No ratings, accounts, chat, or remote access.** The server is loopback-only;
+  the Stockfish binary is the only external download and it is pinned by digest.
 
 ### Source layout
 
 ```text
 src/
-  index.ts            CLI, HTTP server, Vite dev middleware / static serving
-  mcp.ts              MCP tool registration
+  index.ts            CLI, HTTP server, engine/review wiring, static serving
+  mcp.ts              MCP tool registration (including review_game)
   game.ts             chess.js wrapper: moves, status, draw/resign, PGN, ASCII board
-  storage.ts          Saved-game directory resolution + per-game JSON persistence
+  storage.ts          Game + review JSON persistence, directory resolution
   store.ts            GameStore: ids, seats, token hashes, events, limits, restore
-  format.ts           Text formatting for MCP tool results
+  format.ts           Text formatting for MCP tool results and reviews
   server/app.ts       Express REST routes + MCP mount + error handling
-  server/ws.ts        WebSocket server, Origin check, broadcast
+  server/ws.ts        WebSocket server, Origin check, review/engine broadcast
+  engine/             Stockfish locate/download/verify, UCI client, lifecycle
+  review/             Move classification, accuracy, review queue/persistence
   shared/protocol.ts  Types shared by server and web
-web/src/              React app: lobby, game view, board, invite panel, live store
-test/                 Rules, store, MCP, REST/WebSocket tests
+  shared/eval.ts      Win-probability/accuracy maths and eval formatting
+web/src/              React app: lobby, game view, board, review panel, live store
+test/                 Rules, store, review, engine, MCP, REST/WebSocket tests
 .oxlintrc.json        Strict Oxlint policy
 .github/workflows/    CI: lint, typecheck, test, build
 .vscode/              Recommended Oxc extension + lint-on-type settings
@@ -266,7 +321,7 @@ test/                 Rules, store, MCP, REST/WebSocket tests
 | `pnpm lint` | Strict Oxlint; warnings and unused suppressions fail the run |
 | `pnpm lint:fix` | Apply Oxlint's safe fixes |
 | `pnpm typecheck` | Server, web, and test TypeScript checks |
-| `pnpm test` | Vitest: rules, store, MCP round-trip, REST + WebSocket |
+| `pnpm test` | Vitest: rules, store, review/engine, MCP round-trip, REST + WebSocket |
 | `pnpm test:watch` | Vitest in watch mode |
 | `pnpm check` | lint + typecheck + tests |
 | `pnpm validate` | check + production build |
@@ -306,18 +361,23 @@ applies safe fixes on request. Changes are checked by
 
 The repository ships with:
 
-- Oxlint with type-aware rules: **0 warnings, 0 errors** across 34 files and
+- Oxlint with type-aware rules: **0 warnings, 0 errors** across 54 files and
   287 rules.
 - TypeScript: server, web, and test configs all clean.
 - Rules tests: Fool's mate, castling, en passant, promotion, draws,
   resignation, illegal moves, PGN and ASCII output.
 - Store tests: seat tokens, turn order, hotseat, events, lookup, deletion.
 - Storage tests: per-platform save directories, save/reload round-trips (including
-  seat tokens, draw offers, and finished games), corrupt-file tolerance, deletion.
+  seat tokens, draw offers, and finished games), review round-trips, corrupt-file
+  tolerance, deletion.
+- Review tests: UCI parsing, release selection, checksum/size rejection,
+  win-probability bands, brilliant/great detection, mate scores, auto-start on
+  game end, engine-unavailable failures, persistence and reuse.
 - MCP tests: two in-process clients create/join/play, `wait_for_move` resolves
   on the opponent's move, errors are `isError`.
-- API tests: real HTTP server + WebSocket broadcast + validation errors.
-- **37/37 Vitest tests pass.**
+- API tests: real HTTP server + WebSocket broadcast + validation errors, engine
+  and review routes when no engine is configured.
+- **119/119 Vitest tests pass.**
 
 The server was also smoke-tested over the wire with the official MCP client
 (`tools/list`, `create_game`, `join_game`, UCI moves, `get_game`) and the UI was
@@ -330,8 +390,15 @@ checked in a headless browser, including a live WebSocket move update.
 - Seat tokens are high-entropy and only their SHA-256 hashes are stored (in
   memory and in saved game files); public game state never includes them.
 - Game deletion is available to anyone on the local machine.
-- Saved games live in the current user's profile (see [Saved games](#saved-games));
-  the server does not encrypt them.
+- Saved games and reviews live in the current user's profile (see
+  [Saved games](#saved-games)); the server does not encrypt them.
+- The first run downloads the official Stockfish release (~80 MB) into the data
+  directory. The URL, byte size, and SHA-256 digest are pinned in
+  `src/engine/releases.ts`; the download is verified before extraction, and
+  archive paths are checked for traversal. Use `--no-engine-download` or
+  `--engine <path>` to avoid or replace the download.
+- Stockfish runs as a local child process. Only the configured path is executed;
+  no part of an HTTP/MCP request can choose the binary.
 - The MCP server has no resources or prompts; all state is returned by tools.
 
 ## License

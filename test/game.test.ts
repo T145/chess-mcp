@@ -231,6 +231,7 @@ describe('Game clock', () => {
       blackMs: 60_000,
       turnStartedAt: 5_000
     });
+    expect(game.toPublic().moves[0]?.clocks).toEqual({ whiteMs: 56_000, blackMs: 60_000 });
 
     game.applyMove('e5', 8_000);
     expect(game.toPublic().clock).toMatchObject({
@@ -238,6 +239,7 @@ describe('Game clock', () => {
       blackMs: 58_000,
       turnStartedAt: 8_000
     });
+    expect(game.toPublic().moves[1]?.clocks).toEqual({ whiteMs: 56_000, blackMs: 58_000 });
   });
 
   it('flags the side to move when its time expires', () => {

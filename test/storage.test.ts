@@ -147,6 +147,7 @@ describe('GameStorage', () => {
     const saved = new GameStorage(dir).load()[0];
     expect(saved?.clock?.label).toBe('10 + 5');
     expect(saved?.clock?.whiteMs).toBeGreaterThanOrEqual(600_000);
+    expect(saved?.moves[0]?.clocks?.whiteMs).toBeGreaterThan(0);
 
     const reloaded = new GameStore({ dataDir: dir, autoTick: false });
     const restored = reloaded.getPublic(gameId);
@@ -204,5 +205,56 @@ describe('GameStorage', () => {
     expect(loaded.map((snapshot) => snapshot.id)).toEqual([created.game.id]);
     expect(parseSnapshot({ version: 99 })).toBeNull();
     expect(parseSnapshot(null)).toBeNull();
+  });
+
+  it('saves, reloads, validates, and removes reviews', () => {
+    const dir = tempDir();
+    const storage = new GameStorage(dir);
+    const review = {
+      version: 1 as const,
+      gameId: 'abcdef12',
+      moveCount: 0,
+      engineName: 'Stockfish 19',
+      depth: 14,
+      createdAt: 1,
+      durationMs: 10,
+      accuracy: { white: 100, black: 100 },
+      counts: {
+        white: {
+          brilliant: 0,
+          great: 0,
+          best: 0,
+          excellent: 0,
+          good: 0,
+          inaccuracy: 0,
+          mistake: 0,
+          blunder: 0,
+          forced: 0
+        },
+        black: {
+          brilliant: 0,
+          great: 0,
+          best: 0,
+          excellent: 0,
+          good: 0,
+          inaccuracy: 0,
+          mistake: 0,
+          blunder: 0,
+          forced: 0
+        }
+      },
+      evalGraph: [0],
+      moves: []
+    };
+
+    storage.saveReview(review);
+    expect(storage.loadReview(review.gameId)?.engineName).toBe('Stockfish 19');
+
+    writeFileSync(path.join(dir, 'reviews', `${review.gameId}.json`), '{"version":1}');
+    expect(storage.loadReview(review.gameId)).toBeNull();
+
+    storage.saveReview(review);
+    storage.removeReview(review.gameId);
+    expect(storage.loadReview(review.gameId)).toBeNull();
   });
 });

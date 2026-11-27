@@ -3,12 +3,17 @@ import { homedir as osHomedir } from 'node:os';
 import path from 'node:path';
 
 import type { GameSnapshot, SeatState } from './game.js';
+import { MOVE_QUALITIES } from './shared/protocol.js';
 import type {
   Color,
   GameClock,
   GamePhase,
   GameStatus,
+  MoveClocks,
+  MoveQuality,
   MoveRecord,
+  MoveReview,
+  ReviewSummary,
   SeatKind,
   TimeControlCategory
 } from './shared/protocol.js';
@@ -123,9 +128,16 @@ function parseSeat(value: unknown): SeatState | null {
   };
 }
 
+function parseMoveClocks(value: unknown): MoveClocks | null {
+  if (!isRecord(value)) return null;
+  const { whiteMs, blackMs } = value;
+  if (!isFiniteNumber(whiteMs) || !isFiniteNumber(blackMs)) return null;
+  return { whiteMs, blackMs };
+}
+
 function parseMove(value: unknown): MoveRecord | null {
   if (!isRecord(value)) return null;
-  const { san, from, to, color, promotion, note } = value;
+  const { san, from, to, color, promotion, clocks, note } = value;
   if (
     typeof san !== 'string' ||
     typeof from !== 'string' ||
@@ -136,12 +148,21 @@ function parseMove(value: unknown): MoveRecord | null {
   }
   if (promotion !== undefined && typeof promotion !== 'string') return null;
   if (note !== undefined && typeof note !== 'string') return null;
+
+  let parsedClocks: MoveClocks | undefined;
+  if (clocks !== undefined) {
+    const parsed = parseMoveClocks(clocks);
+    if (!parsed) return null;
+    parsedClocks = parsed;
+  }
+
   return {
     san,
     from,
     to,
     color,
     ...(typeof promotion === 'string' ? { promotion } : {}),
+    ...(parsedClocks ? { clocks: parsedClocks } : {}),
     ...(typeof note === 'string' && note.length > 0 ? { note } : {})
   };
 }
@@ -202,6 +223,152 @@ export function parseSnapshot(value: unknown): GameSnapshot | null {
   };
 }
 
+function isMoveQuality(value: unknown): value is MoveQuality {
+  return typeof value === 'string' && (MOVE_QUALITIES as readonly string[]).includes(value);
+}
+
+function parseMoveReview(value: unknown): MoveReview | null {
+  if (!isRecord(value)) return null;
+  const {
+    ply,
+    color,
+    san,
+    uci,
+    quality,
+    evalBeforeCp,
+    evalAfterCp,
+    cpLoss,
+    winBefore,
+    winAfter,
+    accuracy,
+    bestMoveUci,
+    bestMoveSan,
+    pv,
+    depth
+  } = value;
+
+  if (!isFiniteNumber(ply) || !Number.isInteger(ply) || ply < 1) return null;
+  if (!isColor(color) || !isMoveQuality(quality)) return null;
+  if (typeof san !== 'string' || typeof uci !== 'string') return null;
+  if (
+    !isFiniteNumber(evalBeforeCp) ||
+    !isFiniteNumber(evalAfterCp) ||
+    !isFiniteNumber(cpLoss) ||
+    !isFiniteNumber(winBefore) ||
+    !isFiniteNumber(winAfter) ||
+    !isFiniteNumber(accuracy) ||
+    !isFiniteNumber(depth)
+  ) {
+    return null;
+  }
+  if (bestMoveUci !== null && typeof bestMoveUci !== 'string') return null;
+  if (bestMoveSan !== null && typeof bestMoveSan !== 'string') return null;
+  if (!Array.isArray(pv) || !pv.every((entry) => typeof entry === 'string')) return null;
+
+  return {
+    ply,
+    color,
+    san,
+    uci,
+    quality,
+    evalBeforeCp,
+    evalAfterCp,
+    cpLoss,
+    winBefore,
+    winAfter,
+    accuracy,
+    bestMoveUci,
+    bestMoveSan,
+    pv,
+    depth
+  };
+}
+
+function parseQualityCounts(value: unknown): Record<MoveQuality, number> | null {
+  if (!isRecord(value)) return null;
+  const counts: Record<MoveQuality, number> = {
+    brilliant: 0,
+    great: 0,
+    best: 0,
+    excellent: 0,
+    good: 0,
+    inaccuracy: 0,
+    mistake: 0,
+    blunder: 0,
+    forced: 0
+  };
+  for (const quality of MOVE_QUALITIES) {
+    const count = value[quality];
+    if (!isFiniteNumber(count) || count < 0 || !Number.isInteger(count)) return null;
+    counts[quality] = count;
+  }
+  return counts;
+}
+
+/** Validate a review file read from disk; returns null for anything malformed. */
+export function parseReviewSummary(value: unknown): ReviewSummary | null {
+  if (!isRecord(value)) return null;
+
+  const {
+    version,
+    gameId,
+    moveCount,
+    engineName,
+    depth,
+    createdAt,
+    durationMs,
+    accuracy,
+    counts,
+    evalGraph,
+    moves
+  } = value;
+
+  if (version !== 1) return null;
+  if (typeof gameId !== 'string' || !SAFE_ID.test(gameId)) return null;
+  if (!isFiniteNumber(moveCount) || !Number.isInteger(moveCount) || moveCount < 0) return null;
+  if (typeof engineName !== 'string') return null;
+  if (!isFiniteNumber(depth) || !isFiniteNumber(createdAt) || !isFiniteNumber(durationMs)) {
+    return null;
+  }
+  if (!isRecord(accuracy)) return null;
+  const whiteAccuracy = accuracy.white;
+  const blackAccuracy = accuracy.black;
+  if (!isFiniteNumber(whiteAccuracy) || !isFiniteNumber(blackAccuracy)) return null;
+
+  if (!isRecord(counts)) return null;
+  const whiteCounts = parseQualityCounts(counts.white);
+  const blackCounts = parseQualityCounts(counts.black);
+  if (!whiteCounts || !blackCounts) return null;
+
+  if (!Array.isArray(evalGraph) || !evalGraph.every((entry) => isFiniteNumber(entry))) {
+    return null;
+  }
+  if (evalGraph.length !== moveCount + 1) return null;
+
+  if (!Array.isArray(moves)) return null;
+  const parsedMoves: MoveReview[] = [];
+  for (const raw of moves) {
+    const move = parseMoveReview(raw);
+    if (!move) return null;
+    parsedMoves.push(move);
+  }
+  if (parsedMoves.length !== moveCount) return null;
+
+  return {
+    version: 1,
+    gameId,
+    moveCount,
+    engineName,
+    depth,
+    createdAt,
+    durationMs,
+    accuracy: { white: whiteAccuracy, black: blackAccuracy },
+    counts: { white: whiteCounts, black: blackCounts },
+    evalGraph,
+    moves: parsedMoves
+  };
+}
+
 /**
  * Stores one JSON file per game under <dataDir>/games. Failures are logged and
  * swallowed so a read-only disk never takes down the chess server.
@@ -209,10 +376,12 @@ export function parseSnapshot(value: unknown): GameSnapshot | null {
 export class GameStorage {
   readonly dataDir: string;
   private readonly gamesDir: string;
+  private readonly reviewsDir: string;
 
   constructor(dataDir: string) {
     this.dataDir = path.resolve(dataDir);
     this.gamesDir = path.join(this.dataDir, 'games');
+    this.reviewsDir = path.join(this.dataDir, 'reviews');
   }
 
   load(): GameSnapshot[] {
@@ -254,14 +423,52 @@ export class GameStorage {
   remove(id: string): void {
     try {
       rmSync(this.fileFor(id), { force: true });
+      rmSync(this.reviewFileFor(id), { force: true });
     } catch (error) {
       console.error(`Failed to delete saved game ${id} from ${this.dataDir}:`, error);
+    }
+  }
+
+  loadReview(gameId: string): ReviewSummary | null {
+    const file = this.reviewFileFor(gameId);
+    try {
+      const parsed: unknown = JSON.parse(readFileSync(file, 'utf8'));
+      const review = parseReviewSummary(parsed);
+      if (!review) console.warn(`Ignoring saved review with an invalid format: ${file}`);
+      return review;
+    } catch {
+      return null;
+    }
+  }
+
+  saveReview(review: ReviewSummary): void {
+    try {
+      mkdirSync(this.reviewsDir, { recursive: true });
+      const file = this.reviewFileFor(review.gameId);
+      const temporary = `${file}.tmp`;
+      writeFileSync(temporary, `${JSON.stringify(review, null, 2)}\n`, 'utf8');
+      renameSync(temporary, file);
+    } catch (error) {
+      console.error(`Failed to save review for ${review.gameId} to ${this.dataDir}:`, error);
+    }
+  }
+
+  removeReview(gameId: string): void {
+    try {
+      rmSync(this.reviewFileFor(gameId), { force: true });
+    } catch (error) {
+      console.error(`Failed to delete saved review ${gameId} from ${this.dataDir}:`, error);
     }
   }
 
   private fileFor(id: string): string {
     const safeId = SAFE_ID.test(id) ? id : encodeURIComponent(id);
     return path.join(this.gamesDir, `${safeId}.json`);
+  }
+
+  private reviewFileFor(gameId: string): string {
+    const safeId = SAFE_ID.test(gameId) ? gameId : encodeURIComponent(gameId);
+    return path.join(this.reviewsDir, `${safeId}.json`);
   }
 }
 

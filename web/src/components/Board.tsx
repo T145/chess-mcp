@@ -1,19 +1,79 @@
 import { Chess, SQUARES, type Square } from 'chess.js';
+import { Chessboard, getRelativeCoords } from 'react-chessboard';
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { Chessboard } from 'react-chessboard';
 
-import type { MoveInput, PublicGame } from '../../../src/shared/protocol';
+import type { MoveInput, MoveRecord, PublicGame } from '../../../src/shared/protocol';
 
 interface BoardProps {
   game: PublicGame;
   orientation: 'white' | 'black';
   canMove: boolean;
   onMove: (move: MoveInput) => void;
+  /** Review mode: show this FEN instead of the live game position. */
+  position?: string;
+  /** Review mode: highlight this move instead of the game's last move. */
+  lastMove?: MoveRecord | null;
+  /** Review mode: draw a green arrow to the engine's recommended move. */
+  bestMove?: { from: string; to: string } | null;
 }
 
 interface PendingPromotion {
   from: string;
   to: string;
+}
+
+interface ArrowGeometry {
+  stem: string;
+  head: string;
+}
+
+const BOARD_VIEWBOX = 2048;
+const BOARD_COLUMNS = 8;
+const BOARD_ROWS = 8;
+const SQUARE_SIZE = BOARD_VIEWBOX / BOARD_COLUMNS;
+
+/**
+ * Build a clean arrow with a stem that stops at the triangle's base. Drawing
+ * the head separately avoids react-chessboard's marker/stem overlap.
+ */
+function arrowGeometry(
+  orientation: 'white' | 'black',
+  fromSquare: string,
+  toSquare: string
+): ArrowGeometry | null {
+  if (fromSquare === toSquare) return null;
+  const from = getRelativeCoords(orientation, BOARD_VIEWBOX, BOARD_COLUMNS, BOARD_ROWS, fromSquare);
+  const to = getRelativeCoords(orientation, BOARD_VIEWBOX, BOARD_COLUMNS, BOARD_ROWS, toSquare);
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const length = Math.hypot(dx, dy);
+  if (length < 1) return null;
+
+  const ux = dx / length;
+  const uy = dy / length;
+  const px = -uy;
+  const py = ux;
+
+  const start = {
+    x: from.x + ux * SQUARE_SIZE * 0.12,
+    y: from.y + uy * SQUARE_SIZE * 0.12
+  };
+  const tip = {
+    x: to.x - ux * SQUARE_SIZE * 0.28,
+    y: to.y - uy * SQUARE_SIZE * 0.28
+  };
+  const base = {
+    x: tip.x - ux * SQUARE_SIZE * 0.24,
+    y: tip.y - uy * SQUARE_SIZE * 0.24
+  };
+  const halfWidth = SQUARE_SIZE * 0.16;
+  const left = { x: base.x + px * halfWidth, y: base.y + py * halfWidth };
+  const right = { x: base.x - px * halfWidth, y: base.y - py * halfWidth };
+
+  return {
+    stem: `M${start.x.toFixed(2)},${start.y.toFixed(2)} L${base.x.toFixed(2)},${base.y.toFixed(2)}`,
+    head: `${tip.x.toFixed(2)},${tip.y.toFixed(2)} ${left.x.toFixed(2)},${left.y.toFixed(2)} ${right.x.toFixed(2)},${right.y.toFixed(2)}`
+  };
 }
 
 const LIGHT_SQUARE = '#ebecd0';
@@ -33,17 +93,27 @@ function kingSquare(chess: Chess, color: 'w' | 'b'): string | null {
   return null;
 }
 
-export function Board({ game, orientation, canMove, onMove }: BoardProps) {
-  const chess = useMemo(() => new Chess(game.fen), [game.fen]);
+export function Board({
+  game,
+  orientation,
+  canMove,
+  onMove,
+  position,
+  lastMove: lastMoveOverride,
+  bestMove
+}: BoardProps) {
+  const fen = position ?? game.fen;
+  const lastMove = lastMoveOverride === undefined ? game.lastMove : lastMoveOverride;
+  const chess = useMemo(() => new Chess(fen), [fen]);
   const [selected, setSelected] = useState<string | null>(null);
   const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
   const promotionDialog = useRef<HTMLDialogElement>(null);
-  const [positionFen, setPositionFen] = useState(game.fen);
+  const [positionFen, setPositionFen] = useState(fen);
 
   // Adjust transient UI state during render when the server position changes.
   // This avoids an effect that would cause an extra render pass.
-  if (positionFen !== game.fen) {
-    setPositionFen(game.fen);
+  if (positionFen !== fen) {
+    setPositionFen(fen);
     setSelected(null);
     setPendingPromotion(null);
   }
@@ -67,9 +137,9 @@ export function Board({ game, orientation, canMove, onMove }: BoardProps) {
   const squareStyles = useMemo(() => {
     const styles: Record<string, CSSProperties> = {};
 
-    if (game.lastMove) {
-      styles[game.lastMove.from] = { background: 'rgba(255, 213, 79, 0.28)' };
-      styles[game.lastMove.to] = { background: 'rgba(255, 213, 79, 0.36)' };
+    if (lastMove) {
+      styles[lastMove.from] = { background: 'rgba(255, 213, 79, 0.28)' };
+      styles[lastMove.to] = { background: 'rgba(255, 213, 79, 0.36)' };
     }
 
     if (selected) {
@@ -89,7 +159,7 @@ export function Board({ game, orientation, canMove, onMove }: BoardProps) {
       };
     }
 
-    if (game.inCheck) {
+    if (chess.inCheck()) {
       const king = kingSquare(chess, chess.turn());
       if (king) {
         styles[king] = {
@@ -100,7 +170,7 @@ export function Board({ game, orientation, canMove, onMove }: BoardProps) {
     }
 
     return styles;
-  }, [chess, destinationMoves, game.inCheck, game.lastMove, selected]);
+  }, [chess, destinationMoves, lastMove, selected]);
 
   const needsPromotion = (from: string, to: string): boolean => {
     if (!isSquare(from) || !isSquare(to)) return false;
@@ -176,11 +246,15 @@ export function Board({ game, orientation, canMove, onMove }: BoardProps) {
     onMove({ from, to, promotion });
   };
 
+  const arrowMove = bestMove ?? (lastMove ? { from: lastMove.from, to: lastMove.to } : null);
+  const arrowColor = bestMove ? 'rgba(124, 240, 109, 0.9)' : 'rgba(255, 213, 79, 0.72)';
+  const arrowShape = arrowMove ? arrowGeometry(orientation, arrowMove.from, arrowMove.to) : null;
+
   return (
-    <div className="board-shell">
+    <div className="board-shell relative">
       <Chessboard
         options={{
-          position: game.fen,
+          position: fen,
           boardOrientation: orientation,
           allowDragging: canMove && !pendingPromotion,
           canDragPiece: ({ piece }) =>
@@ -195,18 +269,25 @@ export function Board({ game, orientation, canMove, onMove }: BoardProps) {
           showAnimations: true,
           showNotation: true,
           boardStyle: { borderRadius: 0 },
-          arrows:
-            game.lastMove && game.lastMove.from !== game.lastMove.to
-              ? [
-                  {
-                    startSquare: game.lastMove.from,
-                    endSquare: game.lastMove.to,
-                    color: 'rgba(255, 213, 79, 0.72)'
-                  }
-                ]
-              : []
+          allowDrawingArrows: false
         }}
       />
+      {arrowShape && (
+        <svg
+          viewBox={`0 0 ${BOARD_VIEWBOX} ${BOARD_VIEWBOX}`}
+          className="pointer-events-none absolute inset-0 z-30 h-full w-full"
+          aria-hidden="true"
+        >
+          <path
+            d={arrowShape.stem}
+            fill="none"
+            stroke={arrowColor}
+            strokeWidth={SQUARE_SIZE * 0.1}
+            strokeLinecap="round"
+          />
+          <polygon points={arrowShape.head} fill={arrowColor} />
+        </svg>
+      )}
 
       <dialog
         ref={promotionDialog}

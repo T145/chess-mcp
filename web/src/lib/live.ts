@@ -1,17 +1,30 @@
 import { useSyncExternalStore } from 'react';
 
-import type { PublicGame, WsServerMessage } from '../../../src/shared/protocol';
+import type {
+  EngineStatus,
+  PublicGame,
+  ReviewState,
+  WsServerMessage
+} from '../../../src/shared/protocol';
 import { api } from './api';
 
 export interface LiveState {
   games: Record<string, PublicGame>;
+  reviews: Record<string, ReviewState>;
+  engine: EngineStatus | null;
   connected: boolean;
   loaded: boolean;
 }
 
 type Listener = () => void;
 
-let state: LiveState = { games: {}, connected: false, loaded: false };
+let state: LiveState = {
+  games: {},
+  reviews: {},
+  engine: null,
+  connected: false,
+  loaded: false
+};
 const listeners = new Set<Listener>();
 
 let socket: WebSocket | null = null;
@@ -53,6 +66,14 @@ function isWsServerMessage(value: unknown): value is WsServerMessage {
         Array.isArray(value.games) &&
         value.games.every((game) => isRecord(game) && typeof game.id === 'string')
       );
+    case 'review':
+      return (
+        typeof value.id === 'string' &&
+        isRecord(value.review) &&
+        typeof value.review.phase === 'string'
+      );
+    case 'engine':
+      return isRecord(value.engine) && typeof value.engine.phase === 'string';
     default:
       return false;
   }
@@ -79,7 +100,16 @@ function handleMessage(raw: string): void {
   } else if (message.type === 'deleted') {
     const games = { ...state.games };
     delete games[message.id];
-    setState({ ...state, games });
+    const reviews = { ...state.reviews };
+    delete reviews[message.id];
+    setState({ ...state, games, reviews });
+  } else if (message.type === 'review') {
+    setState({
+      ...state,
+      reviews: { ...state.reviews, [message.id]: message.review }
+    });
+  } else if (message.type === 'engine') {
+    setState({ ...state, engine: message.engine });
   }
 }
 
@@ -138,10 +168,26 @@ export function startLive(): void {
     .catch(() => {
       if (!state.loaded) setState({ ...state, loaded: true });
     });
+
+  void api
+    .getEngine()
+    .then(({ engine }) => {
+      setState({ ...state, engine });
+      return undefined;
+    })
+    .catch(() => undefined);
 }
 
 export function mergeGame(game: PublicGame): void {
   setState({ ...state, games: { ...state.games, [game.id]: game }, loaded: true });
+}
+
+export function mergeReview(review: ReviewState): void {
+  setState({ ...state, reviews: { ...state.reviews, [review.gameId]: review } });
+}
+
+export function mergeEngine(engine: EngineStatus): void {
+  setState({ ...state, engine });
 }
 
 export function removeGame(id: string): void {

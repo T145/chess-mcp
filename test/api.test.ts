@@ -292,7 +292,7 @@ describe('HTTP API and WebSocket', () => {
     }
   });
 
-  it('returns JSON 400 for invalid request bodies and 404 for unknown routes', async () => {
+  it('reports JSON 400 for invalid request bodies and 404 for unknown routes', async () => {
     const server = await startServer();
     try {
       const invalid = await post<{ error: string }>(server.base, '/api/games', { name: '' });
@@ -302,6 +302,49 @@ describe('HTTP API and WebSocket', () => {
       const missing = await fetch(`${server.base}/api/nope`);
       expect(missing.status).toBe(404);
       expect(await missing.json()).toEqual({ error: 'Not found' });
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('exposes engine/review routes and degrades without an engine', async () => {
+    const server = await startServer();
+    try {
+      const engine = await fetch(`${server.base}/api/engine`);
+      expect(engine.status).toBe(200);
+      const engineBody = (await engine.json()) as { engine: { phase: string } };
+      expect(engineBody.engine.phase).toBe('unavailable');
+
+      const created = await post<CreateGameResponse>(server.base, '/api/games', {
+        name: 'Alice',
+        color: 'white'
+      });
+      const gameId = created.body.game.id;
+      const joined = await post<JoinGameResponse>(server.base, `/api/games/${gameId}/join`, {
+        name: 'Bob',
+        seat: 'black'
+      });
+      await post(server.base, `/api/games/${gameId}/moves`, {
+        move: 'e4',
+        token: created.body.token
+      });
+      await post(server.base, `/api/games/${gameId}/resign`, {
+        token: joined.body.token
+      });
+
+      const state = await fetch(`${server.base}/api/games/${gameId}/review`);
+      expect(state.status).toBe(200);
+      const stateBody = (await state.json()) as { review: { phase: string; gameId: string } };
+      expect(stateBody.review.gameId).toBe(gameId);
+      expect(stateBody.review.phase).toBe('failed');
+
+      const start = await post<{ error: string }>(
+        server.base,
+        `/api/games/${gameId}/review`,
+        {}
+      );
+      expect(start.status).toBe(503);
+      expect(start.body.error).toMatch(/not enabled/i);
     } finally {
       await server.close();
     }

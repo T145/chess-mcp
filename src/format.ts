@@ -1,5 +1,7 @@
 import type { Game, NoteVisibility } from './game.js';
-import type { Color, PublicGame } from './shared/protocol.js';
+import { formatEval } from './shared/eval.js';
+import { MOVE_QUALITIES } from './shared/protocol.js';
+import type { Color, PublicGame, ReviewState, ReviewSummary } from './shared/protocol.js';
 import { describeTimeControl, formatClockLine } from './shared/timeControl.js';
 
 function capitalize(value: string): string {
@@ -100,4 +102,75 @@ export function formatTokenNotice(color: Color, name: string, token: string): st
     `Seat token: ${token}`,
     'Keep this token secret and pass it as seat_token on every make_move, resign, and draw call.'
   ].join('\n');
+}
+
+function plyLabel(ply: number, color: Color): string {
+  const moveNumber = Math.ceil(ply / 2);
+  return color === 'white' ? `${moveNumber}.` : `${moveNumber}...`;
+}
+
+const QUALITY_LABELS = {
+  brilliant: 'brilliant',
+  great: 'great',
+  best: 'best',
+  excellent: 'excellent',
+  good: 'good',
+  inaccuracy: 'inaccuracy',
+  mistake: 'mistake',
+  blunder: 'blunder',
+  forced: 'forced'
+} as const;
+
+function countsLine(review: ReviewSummary, color: Color): string {
+  const counts = review.counts[color];
+  const parts = MOVE_QUALITIES.filter(
+    (quality) => quality !== 'forced' && counts[quality] > 0
+  ).map((quality) => `${counts[quality]} ${QUALITY_LABELS[quality]}`);
+  return `${capitalize(color)}: ${parts.length > 0 ? parts.join(', ') : 'no notable moves'}`;
+}
+
+/** Compact report used by the MCP tool and the terminal. */
+export function formatReview(review: ReviewSummary): string {
+  const lines = [
+    `Review of game ${review.gameId} (${review.engineName}, depth ${review.depth}) in ${(
+      review.durationMs / 1_000
+    ).toFixed(1)}s`,
+    `Accuracy: White ${review.accuracy.white.toFixed(1)}% · Black ${review.accuracy.black.toFixed(1)}%`,
+    countsLine(review, 'white'),
+    countsLine(review, 'black')
+  ];
+
+  const moments = review.moves.filter((move) =>
+    ['brilliant', 'great', 'inaccuracy', 'mistake', 'blunder'].includes(move.quality)
+  );
+  if (moments.length > 0) {
+    lines.push('', 'Key moments:');
+    for (const move of moments.slice(0, 25)) {
+      const best =
+        move.bestMoveSan && move.bestMoveSan !== move.san ? `, best ${move.bestMoveSan}` : '';
+      lines.push(
+        `  ${plyLabel(move.ply, move.color)} ${move.san} ${move.quality}` +
+          ` (${formatEval(move.evalBeforeCp)} → ${formatEval(move.evalAfterCp)}${best})`
+      );
+    }
+    if (moments.length > 25) lines.push(`  … ${moments.length - 25} more`);
+  }
+
+  return lines.join('\n');
+}
+
+/** Human-readable state for a review that may not be complete yet. */
+export function formatReviewState(state: ReviewState): string {
+  if (state.phase === 'complete' && state.review) return formatReview(state.review);
+  if (state.phase === 'failed') {
+    return `Review failed for game ${state.gameId}: ${state.error ?? 'unknown error'}`;
+  }
+  if (state.phase === 'running' || state.phase === 'queued') {
+    const percent = state.total > 0 ? Math.round((state.done / state.total) * 100) : 0;
+    return (
+      `Review of game ${state.gameId} is ${state.phase === 'queued' ? 'queued' : 'running'} ` +
+      `(${state.done}/${state.total} positions, ${percent}%). Call review_game again to wait for it.`
+    );
+  }
+  return `No review yet for game ${state.gameId}. Call review_game to start one.`;
 }

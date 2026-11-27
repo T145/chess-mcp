@@ -1,3 +1,4 @@
+import { Chess } from 'chess.js';
 import {
   useCallback,
   useEffect,
@@ -7,11 +8,17 @@ import {
   useState
 } from 'react';
 
-import type { Color, DrawAction, MoveInput, PublicGame } from '../../../src/shared/protocol';
+import type {
+  Color,
+  DrawAction,
+  MoveInput,
+  MoveQuality,
+  PublicGame
+} from '../../../src/shared/protocol';
 import { readMaterial } from '../../../src/shared/material';
 import { describeTimeControl, remainingMs } from '../../../src/shared/timeControl';
 import { api } from '../lib/api';
-import { mergeGame, removeGame, useLive } from '../lib/live';
+import { mergeEngine, mergeGame, mergeReview, removeGame, useLive } from '../lib/live';
 import {
   getIdentity,
   getPlayerName,
@@ -19,9 +26,11 @@ import {
   type PlayerIdentity
 } from '../lib/player';
 import { Link, navigate } from '../lib/router';
+import { bestMoveArrow } from '../lib/review';
 import { activeColor, describeStatus, resultLabel, seatLabel } from '../lib/status';
 import { Board } from './Board';
 import { Dialog } from './Dialog';
+import { EvalBar } from './EvalBar';
 import {
   CheckIcon,
   CopyIcon,
@@ -33,17 +42,21 @@ import {
   TrashIcon
 } from './Icons';
 import { InvitePanel } from './InvitePanel';
+import { MoveControls } from './MoveControls';
 import { MoveList } from './MoveList';
 import { PlayerCard } from './PlayerCard';
+import { ReviewPanel } from './ReviewPanel';
 
-type SidePanelTab = 'moves' | 'info';
+type SidePanelTab = 'moves' | 'review' | 'info';
+
+const EVAL_BAR_WIDTH = 28;
 
 /**
  * Measures the free space next to the player cards and returns the largest
  * square that fits inside it, so the board, clocks and move list stay on one
  * screen without scrolling.
  */
-function useFitSquare() {
+function useFitSquare(reserve = 0) {
   const ref = useRef<HTMLDivElement>(null);
   const [size, setSize] = useState(0);
 
@@ -51,7 +64,7 @@ function useFitSquare() {
     const element = ref.current;
     if (!element) return undefined;
     const measure = (width: number, height: number): void => {
-      const next = Math.floor(Math.min(width, height));
+      const next = Math.floor(Math.min(Math.max(0, width - reserve), height));
       setSize((current) => (Math.abs(current - next) > 1 ? next : current));
     };
     const bounds = element.getBoundingClientRect();
@@ -63,9 +76,21 @@ function useFitSquare() {
     });
     observer.observe(element);
     return () => observer.disconnect();
-  }, []);
+  }, [reserve]);
 
   return { ref, size };
+}
+
+function fenAtPly(game: PublicGame, ply: number): string {
+  if (ply <= 0) return new Chess().fen();
+  if (ply >= game.moves.length) return game.fen;
+  const chess = new Chess();
+  for (let index = 0; index < ply; index += 1) {
+    const move = game.moves[index];
+    if (!move) break;
+    chess.move(move.san);
+  }
+  return chess.fen();
 }
 
 function tabClass(active: boolean): string {
@@ -148,6 +173,11 @@ export function GameView({ gameId }: { gameId: string }) {
 }
 
 function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
+  const { reviews, engine } = useLive();
+  const reviewState = reviews[gameId] ?? null;
+  const review = reviewState?.review ?? null;
+  const [selectedPly, setSelectedPly] = useState<number | null>(null);
+  const [reviewBusy, setReviewBusy] = useState(false);
   const [identity, setIdentity] = useState<PlayerIdentity | null>(() => getIdentity(gameId));
   const [orientation, setOrientation] = useState<'white' | 'black'>(
     () => identity?.seat ?? 'white'
@@ -157,7 +187,12 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
   const [copied, setCopied] = useState(false);
   const [tab, setTab] = useState<SidePanelTab>('moves');
   const [inviteOpen, setInviteOpen] = useState(false);
-  const { ref: boardSlotRef, size: boardSize } = useFitSquare();
+  const evalCp = review
+    ? (review.evalGraph[selectedPly ?? review.evalGraph.length - 1] ?? null)
+    : null;
+  const { ref: boardSlotRef, size: boardSize } = useFitSquare(
+    evalCp === null ? 0 : EVAL_BAR_WIDTH
+  );
 
   const run = useCallback(
     async (action: () => Promise<{ game: PublicGame }>): Promise<void> => {
@@ -177,16 +212,73 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
 
   const mySeat = identity?.seat ?? null;
   const hotseat = game.seats.white.kind === 'open' && game.seats.black.kind === 'open';
+  const isReviewing = selectedPly !== null;
   const canMove =
-    game.status.phase === 'playing' && (mySeat === game.turn || (hotseat && mySeat === null));
+    game.status.phase === 'playing' &&
+    !isReviewing &&
+    (mySeat === game.turn || (hotseat && mySeat === null));
   const isSpectator = mySeat === null && !hotseat;
   const turnColor = activeColor(game);
   const topColor: Color = orientation === 'white' ? 'black' : 'white';
   const bottomColor: Color = opposite(topColor);
-  const material = useMemo(() => readMaterial(game.fen, game.moves), [game.fen, game.moves]);
+  const displayFen = useMemo(
+    () => (isReviewing ? fenAtPly(game, selectedPly) : game.fen),
+    [game, isReviewing, selectedPly]
+  );
+  const displayMoves = useMemo(
+    () => (isReviewing ? game.moves.slice(0, selectedPly) : game.moves),
+    [game.moves, isReviewing, selectedPly]
+  );
+  const displayLastMove = isReviewing
+    ? selectedPly > 0
+      ? (game.moves[selectedPly - 1] ?? null)
+      : null
+    : game.lastMove;
+  const material = useMemo(
+    () => readMaterial(displayFen, displayMoves),
+    [displayFen, displayMoves]
+  );
+  const qualities = useMemo(() => {
+    const map: Partial<Record<number, MoveQuality>> = {};
+    if (review) for (const move of review.moves) map[move.ply] = move.quality;
+    return map;
+  }, [review]);
+  const bestArrow = useMemo(() => bestMoveArrow(review, selectedPly), [review, selectedPly]);
   // Colors can only be exchanged before the first move, and only by a seated player.
   const canSwapColors =
     identity !== null && game.status.phase === 'playing' && game.moves.length === 0;
+
+  // Load a saved review when the finished game page opens, and keep the engine
+  // status fresh even if the WebSocket is not available.
+  useEffect(() => {
+    if (game.status.phase === 'playing') return undefined;
+    let active = true;
+    void api
+      .getReview(game.id)
+      .then(({ review: loaded }) => {
+        if (active) mergeReview(loaded);
+        return undefined;
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [game.id, game.status.phase]);
+
+  useEffect(() => {
+    if (engine) return undefined;
+    let active = true;
+    void api
+      .getEngine()
+      .then(({ engine: loaded }) => {
+        if (active) mergeEngine(loaded);
+        return undefined;
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, [engine]);
 
   // Tick locally between server updates so the running clock counts down; the
   // server remains the authority on flag falls.
@@ -198,6 +290,17 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
     const timer = window.setInterval(() => setNow(Date.now()), 250);
     return () => window.clearInterval(timer);
   }, [clockRunning]);
+
+  /** Live clock while playing, or the recorded bank after the reviewed move. */
+  const displayClockMs = (color: Color): number | null => {
+    const gameClock = game.clock;
+    if (!gameClock) return null;
+    if (!isReviewing) return remainingMs(gameClock, color, now);
+    if (selectedPly === null || selectedPly === 0) return gameClock.baseMs;
+    const snapshot = game.moves[selectedPly - 1]?.clocks;
+    if (!snapshot) return remainingMs(gameClock, color, now);
+    return color === 'white' ? snapshot.whiteMs : snapshot.blackMs;
+  };
 
   const makeMove = useCallback(
     (move: MoveInput): void => {
@@ -254,6 +357,42 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
     void run(() => api.resign(game.id, identity?.token));
   }, [game.id, identity?.token, run]);
 
+  const analyzeGame = useCallback((): void => {
+    setReviewBusy(true);
+    setError(null);
+    void api
+      .startReview(game.id)
+      .then(({ review: started }) => {
+        mergeReview(started);
+        return undefined;
+      })
+      .catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      })
+      .finally(() => setReviewBusy(false));
+  }, [game.id]);
+
+  const retryEngine = useCallback((): void => {
+    setReviewBusy(true);
+    setError(null);
+    void (async () => {
+      try {
+        const installed = await api.installEngine();
+        mergeEngine(installed.engine);
+        const queued = await api.startReview(game.id);
+        mergeReview(queued.review);
+      } catch (cause: unknown) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      } finally {
+        setReviewBusy(false);
+      }
+    })();
+  }, [game.id]);
+
+  const selectPly = useCallback((ply: number | null): void => {
+    setSelectedPly(ply);
+  }, []);
+
   const deleteGame = useCallback((): void => {
     if (!window.confirm('Delete this game for everyone?')) return;
     void (async () => {
@@ -302,8 +441,12 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
   const openSeatCount =
     (game.seats.white.kind === 'open' ? 1 : 0) + (game.seats.black.kind === 'open' ? 1 : 0);
   // Before the first measurement the board simply fills the column; afterwards
-  // the player bars and board share one exact square so they line up.
+  // the player bars and board share one exact square so they line up. The eval
+  // bar is reserved in review mode, and the player cards span the extra width.
+  const evalVisible = evalCp !== null;
   const boardFrameStyle = boardSize > 0 ? { width: boardSize } : undefined;
+  const cardFrameStyle =
+    boardSize > 0 ? { width: boardSize + (evalVisible ? EVAL_BAR_WIDTH : 0) } : undefined;
   const hasAgent = game.seats.white.kind === 'llm' || game.seats.black.kind === 'llm';
 
   return (
@@ -317,6 +460,16 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
         {hotseat && <span className="chip chip-open">Hotseat</span>}
         {isSpectator && <span className="chip">Spectator</span>}
         {hasAgent && <span className="chip chip-llm">LLM game</span>}
+        {selectedPly !== null && (
+          <button
+            type="button"
+            className="chip chip-llm"
+            onClick={() => selectPly(null)}
+            title="Exit review navigation"
+          >
+            Reviewing · exit
+          </button>
+        )}
         <div className="ml-auto flex items-center gap-1">
           {canSwapColors && (
             <button
@@ -351,42 +504,49 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
       <div className="mt-2 grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_360px] xl:grid-cols-[minmax(0,1fr)_400px]">
         <section className="flex min-h-0 min-w-0 flex-col">
           <div className="flex min-h-0 flex-col items-center gap-1.5 lg:h-full">
-            <div className="w-full" style={boardFrameStyle}>
+            <div className="w-full" style={cardFrameStyle}>
               <PlayerCard
                 color={topColor}
                 game={game}
                 captured={material[topColor].captured}
                 advantage={topColor === 'white' ? material.advantage : -material.advantage}
-                clockMs={clock ? remainingMs(clock, topColor, now) : null}
+                clockMs={displayClockMs(topColor)}
                 clockCategory={clock?.category ?? null}
-                clockActive={clockRunning && turnColor === topColor}
-                isActive={turnColor === topColor}
+                clockActive={clockRunning && !isReviewing && turnColor === topColor}
+                isActive={!isReviewing && turnColor === topColor}
                 isYou={mySeat === topColor}
               />
             </div>
             <div
               ref={boardSlotRef}
-              className="flex w-full items-center justify-center lg:min-h-0 lg:flex-1"
+              className="flex w-full items-center justify-center gap-1.5 lg:min-h-0 lg:flex-1"
             >
+              {evalCp !== null && boardSize > 0 && (
+                <EvalBar cp={evalCp} orientation={orientation} height={boardSize} />
+              )}
               <div className="w-full" style={boardFrameStyle}>
                 <Board
                   game={game}
                   orientation={orientation}
                   canMove={canMove && !busy}
                   onMove={makeMove}
+                  bestMove={isReviewing ? bestArrow : null}
+                  {...(isReviewing
+                    ? { position: displayFen, lastMove: displayLastMove }
+                    : {})}
                 />
               </div>
             </div>
-            <div className="w-full" style={boardFrameStyle}>
+            <div className="w-full" style={cardFrameStyle}>
               <PlayerCard
                 color={bottomColor}
                 game={game}
                 captured={material[bottomColor].captured}
                 advantage={bottomColor === 'white' ? material.advantage : -material.advantage}
-                clockMs={clock ? remainingMs(clock, bottomColor, now) : null}
+                clockMs={displayClockMs(bottomColor)}
                 clockCategory={clock?.category ?? null}
-                clockActive={clockRunning && turnColor === bottomColor}
-                isActive={turnColor === bottomColor}
+                clockActive={clockRunning && !isReviewing && turnColor === bottomColor}
+                isActive={!isReviewing && turnColor === bottomColor}
                 isYou={mySeat === bottomColor}
               />
             </div>
@@ -404,6 +564,21 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
               >
                 Moves
               </button>
+              {game.status.phase !== 'playing' && (
+                <button
+                  type="button"
+                  aria-pressed={tab === 'review'}
+                  className={tabClass(tab === 'review')}
+                  onClick={() => setTab('review')}
+                >
+                  Review
+                  {review && (
+                    <span className="ml-1.5 rounded-full bg-accent/20 px-1.5 text-[10px] font-bold text-accent-strong">
+                      ✓
+                    </span>
+                  )}
+                </button>
+              )}
               <button
                 type="button"
                 aria-pressed={tab === 'info'}
@@ -468,7 +643,23 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
             )}
 
             {tab === 'moves' ? (
-              <MoveList game={game} />
+              <MoveList
+                game={game}
+                qualities={qualities}
+                selectedPly={selectedPly}
+                onSelectPly={game.status.phase !== 'playing' ? selectPly : undefined}
+              />
+            ) : tab === 'review' && game.status.phase !== 'playing' ? (
+              <ReviewPanel
+                game={game}
+                state={reviewState}
+                engine={engine}
+                busy={reviewBusy}
+                selectedPly={selectedPly}
+                onStart={analyzeGame}
+                onRetryInstall={retryEngine}
+                onSelectPly={selectPly}
+              />
             ) : (
               <div className="scroll-thin min-h-0 space-y-3 overflow-y-auto p-3 text-xs leading-5 text-muted lg:flex-1">
                 <section>
@@ -554,10 +745,11 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
                 )}
               </div>
             ) : (
-              <Link to="/" className="btn btn-primary w-full py-2 text-xs">
-                <PlusIcon className="h-4 w-4" />
-                New game
-              </Link>
+              <MoveControls
+                total={game.moves.length}
+                selectedPly={selectedPly}
+                onSelectPly={selectPly}
+              />
             )}
 
             <div className="flex gap-2">

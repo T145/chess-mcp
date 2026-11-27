@@ -2,8 +2,9 @@ import { McpServer } from '@modelcontextprotocol/server';
 import * as z from 'zod/v4';
 
 import { UserError } from './errors.js';
-import { formatGameLine, formatState, formatTokenNotice } from './format.js';
+import { formatGameLine, formatReviewState, formatState, formatTokenNotice } from './format.js';
 import type { Game, NoteVisibility } from './game.js';
+import type { ReviewService } from './review/service.js';
 import type { Color, ClockConfig } from './shared/protocol.js';
 import { findTimeControlPreset, timeControlIds, toClockConfig } from './shared/timeControl.js';
 import type { GameStore } from './store.js';
@@ -120,7 +121,7 @@ function waitForMove(
   });
 }
 
-export function createMcpServer(store: GameStore): McpServer {
+export function createMcpServer(store: GameStore, review: ReviewService | null = null): McpServer {
   const server = new McpServer({
     name: 'chess-mcp',
     version: '0.1.0'
@@ -430,6 +431,39 @@ export function createMcpServer(store: GameStore): McpServer {
           }
         ]
       };
+    }
+  );
+
+  server.registerTool(
+    'review_game',
+    {
+      title: 'Review a finished game',
+      description:
+        'Run Stockfish analysis on a finished game and return accuracy, move labels ' +
+        '(brilliant/great/best/excellent/good/inaccuracy/mistake/blunder), and key moments. ' +
+        'Waits for the engine to finish installing if the first-run download is in progress.',
+      inputSchema: z.object({
+        game_id: GAME_ID,
+        wait_seconds: z
+          .number()
+          .int()
+          .min(1)
+          .max(120)
+          .default(30)
+          .describe('How long to wait for the analysis to complete.')
+      }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true }
+    },
+    async ({ game_id, wait_seconds }) => {
+      if (!review) {
+        throw new UserError('Engine review is not enabled on this server.');
+      }
+
+      let state = review.start(game_id);
+      if (state.phase === 'queued' || state.phase === 'running') {
+        state = await review.waitForCompletion(game_id, wait_seconds * 1_000);
+      }
+      return { content: [{ type: 'text', text: formatReviewState(state) }] };
     }
   );
 

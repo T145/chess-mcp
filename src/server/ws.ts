@@ -3,6 +3,7 @@ import type { IncomingMessage, Server } from 'node:http';
 import { WebSocket, WebSocketServer } from 'ws';
 
 import type { WsServerMessage } from '../shared/protocol.js';
+import type { ReviewService } from '../review/service.js';
 import type { GameStore, StoreEvent } from '../store.js';
 
 const ALLOWED_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
@@ -40,6 +41,7 @@ function broadcast(clients: Iterable<WebSocket>, message: WsServerMessage): void
 
 export interface WebSocketOptions {
   allowViteHmr?: boolean;
+  review?: ReviewService | null;
 }
 
 export function attachWebSocket(
@@ -79,6 +81,7 @@ export function attachWebSocket(
     });
     send(socket, { type: 'hello', serverTime: Date.now() });
     send(socket, { type: 'snapshot', games: store.list() });
+    if (options.review) send(socket, { type: 'engine', engine: options.review.engineStatus() });
   });
 
   const unsubscribe = store.subscribe((event: StoreEvent) => {
@@ -88,6 +91,16 @@ export function attachWebSocket(
         : { type: 'deleted', id: event.id };
     broadcast(wss.clients, message);
   });
+
+  const unsubscribeReview =
+    options.review?.subscribe((id, review) => {
+      broadcast(wss.clients, { type: 'review', id, review });
+    }) ?? (() => undefined);
+
+  const unsubscribeEngine =
+    options.review?.subscribeEngine((engine) => {
+      broadcast(wss.clients, { type: 'engine', engine });
+    }) ?? (() => undefined);
 
   const heartbeat = setInterval(() => {
     for (const client of wss.clients) {
@@ -99,6 +112,8 @@ export function attachWebSocket(
   wss.on('close', () => {
     clearInterval(heartbeat);
     unsubscribe();
+    unsubscribeReview();
+    unsubscribeEngine();
   });
 
   return wss;

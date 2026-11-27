@@ -3,9 +3,11 @@ import type {
   CreateGameColor,
   CreateGameResponse,
   DrawAction,
+  EngineStatus,
   JoinGameResponse,
   MoveInput,
   PublicGame,
+  ReviewState,
   SwapSeatsResponse
 } from '../../../src/shared/protocol';
 
@@ -101,5 +103,21 @@ export const api = {
 
   deleteGame(id: string): Promise<{ ok: true }> {
     return request(`/api/games/${encodeURIComponent(id)}`, { method: 'DELETE' });
+  },
+
+  getEngine(): Promise<{ engine: EngineStatus }> {
+    return request('/api/engine');
+  },
+
+  installEngine(): Promise<{ engine: EngineStatus }> {
+    return request('/api/engine/install', { method: 'POST' });
+  },
+
+  getReview(id: string): Promise<{ review: ReviewState }> {
+    return request(`/api/games/${encodeURIComponent(id)}/review`);
+  },
+
+  startReview(id: string): Promise<{ review: ReviewState }> {
+    return request(`/api/games/${encodeURIComponent(id)}/review`, { method: 'POST' });
   }
 };

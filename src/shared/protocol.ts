@@ -40,12 +40,22 @@ export interface PublicSeat {
   name: string;
 }
 
+export interface MoveClocks {
+  whiteMs: number;
+  blackMs: number;
+}
+
 export interface MoveRecord {
   san: string;
   from: string;
   to: string;
   color: Color;
   promotion?: string;
+  /**
+   * Clock banks after this move was played. Present for timed games, so the
+   * review can show the clock as it stood at any point in the game.
+   */
+  clocks?: MoveClocks;
   /**
    * Optional reasoning the mover attached to this move (empty for human moves).
    * It is private to the mover while the game is running: agents only receive
@@ -78,11 +88,101 @@ export interface PublicGame {
   updatedAt: number;
 }
 
+/** Move labels produced by the review engine, best-to-worst display order. */
+export const MOVE_QUALITIES = [
+  'brilliant',
+  'great',
+  'best',
+  'excellent',
+  'good',
+  'inaccuracy',
+  'mistake',
+  'blunder',
+  'forced'
+] as const;
+
+export type MoveQuality = (typeof MOVE_QUALITIES)[number];
+
+export interface MoveReview {
+  /** 1-based ply (half-move) number. */
+  ply: number;
+  color: Color;
+  san: string;
+  uci: string;
+  quality: MoveQuality;
+  /** Evaluation before the move, in centipawns from White's point of view. */
+  evalBeforeCp: number;
+  /** Evaluation after the move, in centipawns from White's point of view. */
+  evalAfterCp: number;
+  /** Centipawns lost by the mover (never negative). */
+  cpLoss: number;
+  /** Win probability for the mover before the move, 0-100. */
+  winBefore: number;
+  /** Win probability for the mover after the move, 0-100. */
+  winAfter: number;
+  /** Per-move accuracy, 0-100. */
+  accuracy: number;
+  bestMoveUci: string | null;
+  bestMoveSan: string | null;
+  pv: string[];
+  depth: number;
+}
+
+export interface ReviewSummary {
+  version: 1;
+  gameId: string;
+  moveCount: number;
+  engineName: string;
+  depth: number;
+  createdAt: number;
+  durationMs: number;
+  accuracy: Record<Color, number>;
+  counts: Record<Color, Record<MoveQuality, number>>;
+  /** White-POV centipawn evaluation after 0..n plies (index 0 is the start). */
+  evalGraph: number[];
+  moves: MoveReview[];
+}
+
+export type ReviewPhase = 'idle' | 'queued' | 'running' | 'complete' | 'failed';
+
+export interface ReviewState {
+  gameId: string;
+  phase: ReviewPhase;
+  /** Positions analyzed so far, and the total number of positions. */
+  done: number;
+  total: number;
+  review: ReviewSummary | null;
+  error: string | null;
+}
+
+export type EnginePhase = 'available' | 'installing' | 'unavailable' | 'failed';
+
+export interface EngineDownload {
+  receivedBytes: number;
+  totalBytes: number;
+  /** Null while the total size is unknown. */
+  percent: number | null;
+}
+
+export interface EngineStatus {
+  phase: EnginePhase;
+  name: string | null;
+  version: string | null;
+  path: string | null;
+  /** True when the binary was fetched into the app's data directory. */
+  managed: boolean;
+  depth: number;
+  download: EngineDownload | null;
+  error: string | null;
+}
+
 export type WsServerMessage =
   | { type: 'hello'; serverTime: number }
   | { type: 'snapshot'; games: PublicGame[] }
   | { type: 'game'; game: PublicGame }
-  | { type: 'deleted'; id: string };
+  | { type: 'deleted'; id: string }
+  | { type: 'review'; id: string; review: ReviewState }
+  | { type: 'engine'; engine: EngineStatus };
 
 export interface CreateGameRequest {
   name: string;

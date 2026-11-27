@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 
 import { Game } from '../src/game.js';
 import type { ClockConfig } from '../src/shared/protocol.js';
+import { GameStore } from '../src/store.js';
 
 function makeGame(fen?: string): Game {
   return new Game({
@@ -309,6 +310,65 @@ describe('Game clock', () => {
     game.applyMove('e4', Date.now(), 'x'.repeat(700));
 
     expect(game.toPublic().lastMove?.note).toHaveLength(500);
+  });
+
+  it('keeps the clock paused when restoring a game with an open seat', () => {
+    const openSeat = { kind: 'open' as const, name: 'Open' };
+    const game = new Game({
+      id: 'openclock',
+      seats: { white: openSeat, black: { kind: 'human', name: 'Taylor' } },
+      now: 1_000,
+      clock: {
+        category: 'rapid',
+        label: '10 min',
+        baseMs: 600_000,
+        incrementMs: 0
+      }
+    });
+    expect(game.toPublic().clock?.turnStartedAt).toBeNull();
+
+    // A stale snapshot from an older server claims the clock was running.
+    const snapshot = game.toSnapshot();
+    if (!snapshot.clock) throw new Error('expected the game to have a clock');
+    snapshot.clock = { ...snapshot.clock, turnStartedAt: 5_000, whiteMs: 590_000 };
+
+    const restored = Game.fromSnapshot(snapshot);
+
+    expect(restored.toPublic().seats.white.kind).toBe('open');
+    expect(restored.toPublic().clock?.turnStartedAt).toBeNull();
+    expect(restored.toPublic().clock?.whiteMs).toBe(590_000);
+    expect(restored.settleClock(9_999_999)).toBe(false);
+    expect(restored.currentStatus.phase).toBe('playing');
+  });
+
+  it('resumes the clock when restoring a fully seated game', () => {
+    const game = timedGame({}, 1_000);
+    const restored = Game.fromSnapshot(game.toSnapshot());
+
+    expect(restored.toPublic().clock?.turnStartedAt).not.toBeNull();
+  });
+
+  it('keeps a solo mover’s clock paused until the opponent sits down', () => {
+    const store = new GameStore({ autoTick: false });
+    const created = store.create({
+      as: 'white',
+      name: 'Alice',
+      kind: 'human',
+      timeControl: { category: 'rapid', label: '10 min', baseMs: 600_000, incrementMs: 0 }
+    });
+    const { id } = created.game;
+
+    store.move(id, 'e4', created.token ?? '');
+    const paused = store.getPublic(id);
+    expect(paused.turn).toBe('black');
+    expect(paused.clock?.turn).toBe('black');
+    expect(paused.clock?.turnStartedAt).toBeNull();
+
+    store.join(id, 'black', 'Bob', 'human');
+    const running = store.getPublic(id);
+    expect(running.clock?.turnStartedAt).not.toBeNull();
+    expect(running.clock?.blackMs).toBe(600_000);
+    store.dispose();
   });
 
   it('keeps untimed games without a clock', () => {

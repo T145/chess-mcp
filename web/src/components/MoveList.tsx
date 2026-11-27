@@ -45,7 +45,7 @@ export function MoveList({ game }: { game: PublicGame }) {
             <div
               key={row.number}
               className={`grid grid-cols-[2.2rem_1fr_1fr] gap-1 rounded px-1.5 py-0.5 ${
-                index === rows.length - 1 ? 'bg-white/[0.04]' : ''
+                index === rows.length - 1 ? 'bg-white/4' : ''
               }`}
             >
               <span className="text-muted">{row.number}.</span>

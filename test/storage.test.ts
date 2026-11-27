@@ -137,6 +137,7 @@ describe('GameStorage', () => {
       timeControl: { category: 'rapid', label: '10 + 5', baseMs: 600_000, incrementMs: 5_000 }
     });
     const gameId = created.game.id;
+    store.join(gameId, 'black', 'Bob', 'human');
     store.move(gameId, 'e4', created.token ?? '');
 
     const saved = new GameStorage(dir).load()[0];
@@ -153,6 +154,32 @@ describe('GameStorage', () => {
     const legacy: Record<string, unknown> = { ...store.get(gameId).toSnapshot() };
     delete legacy.clock;
     expect(parseSnapshot(legacy)?.clock).toBeNull();
+
+    reloaded.dispose();
+    store.dispose();
+  });
+
+  it('does not start a clock for a saved game with an open seat', () => {
+    const dir = tempDir();
+    const store = new GameStore({ dataDir: dir, autoTick: false });
+    const created = store.create({
+      as: 'black',
+      name: 'Taylor',
+      kind: 'human',
+      timeControl: { category: 'rapid', label: '10 min', baseMs: 600_000, incrementMs: 0 }
+    });
+    expect(created.game.clock?.turnStartedAt).toBeNull();
+
+    const reloaded = new GameStore({ dataDir: dir, autoTick: false });
+    const restored = reloaded.getPublic(created.game.id);
+
+    expect(restored.seats.white.kind).toBe('open');
+    expect(restored.clock?.turnStartedAt).toBeNull();
+    expect(restored.clock?.whiteMs).toBe(600_000);
+    expect(restored.status.phase).toBe('playing');
+
+    reloaded.tick(Date.now() + 3_600_000);
+    expect(reloaded.getPublic(created.game.id).status.phase).toBe('playing');
 
     reloaded.dispose();
     store.dispose();

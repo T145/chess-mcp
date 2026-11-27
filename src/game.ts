@@ -175,7 +175,6 @@ export class Game {
     this.chess = new Chess(this.initialFen);
     this.status = statusFromPosition(this.chess);
     if (init.clock) {
-      const bothSeated = init.seats.white.kind !== 'open' && init.seats.black.kind !== 'open';
       this.clock = {
         category: init.clock.category,
         label: init.clock.label,
@@ -186,7 +185,7 @@ export class Game {
         blackMs: init.clock.baseMs,
         turn: this.turn,
         // Do not charge anyone for the time spent inviting an opponent.
-        turnStartedAt: this.isPlaying && bothSeated ? this.createdAt : null
+        turnStartedAt: this.isPlaying && this.bothSeatsClaimed ? this.createdAt : null
       };
     }
     this.syncPgnHeaders();
@@ -220,12 +219,13 @@ export class Game {
         : { ...snapshot.status };
     game.updatedAt = snapshot.updatedAt;
     if (snapshot.clock) {
-      // Saved games resume with a full bank for the side to move: time spent
-      // while the server was down is not charged.
+      // Resume a live game from its saved banks, but keep the clock paused when
+      // a seat is still open (or the game never started): time spent waiting for
+      // an opponent, or while the server was down, is not charged.
       game.clock = {
         ...snapshot.clock,
         turn: game.turn,
-        turnStartedAt: game.isPlaying ? Date.now() : null
+        turnStartedAt: game.isPlaying && game.bothSeatsClaimed ? Date.now() : null
       };
     }
     game.syncPgnHeaders();
@@ -260,12 +260,24 @@ export class Game {
     return this.clock ? { ...this.clock } : null;
   }
 
+  /** True once both colours have someone in the seat. */
+  get bothSeatsClaimed(): boolean {
+    return this.seats.white.kind !== 'open' && this.seats.black.kind !== 'open';
+  }
+
+  /** True while one colour is seated and the other seat is still open. */
+  private get awaitingOpponent(): boolean {
+    const open = Number(this.seats.white.kind === 'open') + Number(this.seats.black.kind === 'open');
+    return open === 1;
+  }
+
   /**
    * Begin the clock. Called when the second seat is filled, or on the first move
    * of a hotseat game, so time spent waiting for an opponent is free.
    */
   startClock(now: number = Date.now()): void {
     if (!this.clock || this.clock.turnStartedAt !== null || !this.isPlaying) return;
+    if (this.awaitingOpponent) return;
     this.clock = { ...this.clock, turn: this.turn, turnStartedAt: now };
   }
 
@@ -393,7 +405,8 @@ export class Game {
       whiteMs: color === 'white' ? remaining : this.clock.whiteMs,
       blackMs: color === 'black' ? remaining : this.clock.blackMs,
       turn: color === 'white' ? 'black' : 'white',
-      turnStartedAt: this.isPlaying ? now : null
+      // Do not start the absent opponent's clock before they sit down.
+      turnStartedAt: this.isPlaying && !this.awaitingOpponent ? now : null
     };
   }
 

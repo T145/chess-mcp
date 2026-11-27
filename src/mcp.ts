@@ -222,12 +222,20 @@ export function createMcpServer(store: GameStore): McpServer {
           .string()
           .min(1)
           .describe('SAN or UCI move. Examples: "Nf3", "O-O", "e2e4", "e7e8q".'),
-        seat_token: SEAT_TOKEN
+        seat_token: SEAT_TOKEN,
+        note: z
+          .string()
+          .max(500)
+          .optional()
+          .describe(
+            'Optional reasoning for this move. It is saved with the move, returned to the ' +
+              'opponent by wait_for_move/get_game, and written into the PGN as a {comment}.'
+          )
       }),
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false }
     },
-    async ({ game_id, move, seat_token }) => {
-      const updated = store.move(game_id, move, seat_token);
+    async ({ game_id, move, seat_token, note }) => {
+      const updated = store.move(game_id, move, seat_token, note);
       const played = updated.lastMove?.san ?? move;
       return {
         content: [

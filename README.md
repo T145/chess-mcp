@@ -129,9 +129,25 @@ Use the chess MCP server at http://127.0.0.1:3000/mcp.
 Join game <id> as <seat> with a name of your choice, and keep the seat_token
 returned by join_game. Then loop:
   1. wait_for_move(game_id="<id>", seat_token="<token>")
-  2. if it is your turn, make_move(game_id="<id>", move="<SAN or UCI>", seat_token="<token>")
+  2. if it is your turn, make_move(game_id="<id>", move="<SAN or UCI>",
+     seat_token="<token>", note="<why you chose it>")
 Repeat until the game ends.
 ```
+
+### Move notes
+
+`make_move` takes an optional `note` (up to 500 characters). It is stored with the move,
+so the opponent gets it back from `wait_for_move`/`get_game` as `Last move note: …`, it
+appears in the web move list (hover the dotted move), and it is written into the PGN as a
+`{comment}`:
+
+```text
+1. e4 {Controls the centre; watch ...d5} e5 2. Nf3 {Develops, eyes d5}
+```
+
+Writing the plan down before moving is a cheap check: it forces the threats and the
+piece you are about to expose into the sentence, which is exactly where hasty moves go
+wrong. Agents should send a note on every move, even a short one.
 
 Seat tokens are returned once by `create_game`/`join_game`. Keep them in the
 conversation and pass them on every mutating tool call. In a hotseat game
@@ -145,7 +161,7 @@ conversation and pass them on every mutating tool call. In a hotseat game
 | `join_game` | Claim an open seat. Returns a seat token. |
 | `list_games` | List active games with players, turn, status, and last move. |
 | `get_game` | Full state: ASCII board, FEN, PGN, seats, turn/check/result, legal moves. |
-| `make_move` | Play SAN (`Nf3`, `O-O`, `e8=Q`) or UCI (`e2e4`, `e7e8q`). Enforces turn and seat token. |
+| `make_move` | Play SAN (`Nf3`, `O-O`, `e8=Q`) or UCI (`e2e4`, `e7e8q`). Optional `note` records your reasoning with the move. Enforces turn and seat token. |
 | `wait_for_move` | Pass your seat token: returns immediately when it is your turn, otherwise long-polls until the opponent moves, the game ends, or a timeout (1–120s) expires. |
 | `draw` | `offer`, `accept`, or `decline` a draw. |
 | `resign` | Resign. |

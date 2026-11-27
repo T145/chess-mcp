@@ -204,7 +204,7 @@ export class GameStore {
     return { game: game.toPublic(), seat: before === 'white' ? 'black' : 'white' };
   }
 
-  move(id: string, move: MoveInput, token?: string): PublicGame {
+  move(id: string, move: MoveInput, token?: string, note?: string): PublicGame {
     const game = this.get(id);
     const seat = this.resolveMoveSeat(game, token);
 
@@ -212,7 +212,7 @@ export class GameStore {
       throw new UserError(`It is ${game.turn}'s turn, not ${seat}'s.`);
     }
 
-    game.applyMove(move);
+    game.applyMove(move, Date.now(), note);
     this.publish(game);
     return game.toPublic();
   }

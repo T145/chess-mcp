@@ -73,10 +73,10 @@ export const api = {
     });
   },
 
-  move(id: string, move: MoveInput, token?: string): Promise<{ game: PublicGame }> {
+  move(id: string, move: MoveInput, token?: string, note?: string): Promise<{ game: PublicGame }> {
     return request(`/api/games/${encodeURIComponent(id)}/moves`, {
       method: 'POST',
-      body: JSON.stringify({ move, token })
+      body: JSON.stringify({ move, token, note })
     });
   },
 

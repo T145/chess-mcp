@@ -50,7 +50,8 @@ const moveSchema = z.object({
       promotion: z.enum(['q', 'r', 'b', 'n']).optional()
     })
   ]),
-  token: z.string().min(1).optional()
+  token: z.string().min(1).optional(),
+  note: z.string().max(500).optional()
 }) satisfies z.ZodType<MoveRequest>;
 
 const drawSchema = z.object({
@@ -127,7 +128,7 @@ export function createApp(store: GameStore): AppBundle {
 
   app.post('/api/games/:id/moves', (req, res) => {
     const body = parseBody(moveSchema, req.body);
-    const game = store.move(req.params.id, body.move, body.token);
+    const game = store.move(req.params.id, body.move, body.token, body.note);
     res.json({ game });
   });
 

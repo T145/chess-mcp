@@ -283,7 +283,35 @@ describe('Game clock', () => {
     expect(game.toPublic().clock?.whiteMs).toBe(day);
   });
 
-  it('leaves untimed games without a clock', () => {
+  it('saves move notes, cleans them, and writes them as PGN comments', () => {
+    const game = makeGame();
+    game.applyMove('e4', Date.now(), '  Controls the centre {and d5}\n then Nf3 ');
+
+    expect(game.toPublic().lastMove?.note).toBe('Controls the centre and d5 then Nf3');
+    expect(game.toPublic().pgn).toContain('1. e4 {Controls the centre and d5 then Nf3}');
+    expect(game.toPublic().pgn).toContain('[Result "*"]');
+  });
+
+  it('annotates only the moves that carry a note', () => {
+    const game = makeGame();
+    game.applyMove('e4', Date.now(), '   ');
+    game.applyMove('e5');
+    game.applyMove('Nf3', Date.now(), 'Develops and eyes e5');
+
+    expect(game.toPublic().moves.filter((move) => move.note)).toHaveLength(1);
+    const pgn = game.toPublic().pgn;
+    expect(pgn).not.toContain('e4 {');
+    expect(pgn).toContain('2. Nf3 {Develops and eyes e5}');
+  });
+
+  it('caps note length', () => {
+    const game = makeGame();
+    game.applyMove('e4', Date.now(), 'x'.repeat(700));
+
+    expect(game.toPublic().lastMove?.note).toHaveLength(500);
+  });
+
+  it('keeps untimed games without a clock', () => {
     expect(makeGame().toPublic().clock).toBeNull();
   });
 });

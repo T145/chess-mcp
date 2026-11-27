@@ -72,7 +72,7 @@ describe('GameStorage', () => {
     const store = new GameStore({ dataDir: dir });
     const created = store.create({ as: 'white', name: 'Alice', kind: 'human' });
     const joined = store.join(created.game.id, 'black', 'Bob', 'human');
-    store.move(created.game.id, 'e4', created.token ?? '');
+    store.move(created.game.id, 'e4', created.token ?? '', 'King pawn, eyes d5');
 
     const files = readdirSync(path.join(dir, 'games'));
     expect(files).toEqual([`${created.game.id}.json`]);
@@ -80,6 +80,8 @@ describe('GameStorage', () => {
     const reloaded = new GameStore({ dataDir: dir });
     const game = reloaded.getPublic(created.game.id);
     expect(game.moves.map((move) => move.san)).toEqual(['e4']);
+    expect(game.moves[0]?.note).toBe('King pawn, eyes d5');
+    expect(game.pgn).toContain('1. e4 {King pawn, eyes d5}');
     expect(game.seats).toEqual({
       white: { kind: 'human', name: 'Alice' },
       black: { kind: 'human', name: 'Bob' }

@@ -149,10 +149,12 @@ describe('HTTP API and WebSocket', () => {
       const played = await post<{ game: PublicGame }>(
         server.base,
         `/api/games/${gameId}/moves`,
-        { move: 'e4', token: created.body.token }
+        { move: 'e4', token: created.body.token, note: 'Centre control' }
       );
       expect(played.status).toBe(200);
       expect(played.body.game.moves[0]?.san).toBe('e4');
+      expect(played.body.game.moves[0]?.note).toBe('Centre control');
+      expect(played.body.game.pgn).toContain('1. e4 {Centre control}');
       expect(played.body.game.turn).toBe('black');
     } finally {
       await server.close();

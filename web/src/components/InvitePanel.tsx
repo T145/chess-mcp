@@ -15,7 +15,9 @@ function agentPrompt(game: PublicGame, seat: Color, origin: string): string {
     `Use the chess MCP server at ${origin}/mcp (Streamable HTTP).`,
     `Join game ${game.id} as ${seat} with a name of your choice, and keep the seat_token returned by join_game.`,
     `Then loop: call wait_for_move(game_id="${game.id}", seat_token="<your token>"), and when it is your turn call `,
-    `make_move(game_id="${game.id}", move="<SAN or UCI>", seat_token="<your token>").`,
+    `make_move(game_id="${game.id}", move="<SAN or UCI>", seat_token="<your token>", note="<your reasoning>").`,
+    `Always pass note: check the opponent's threats and the lines your move opens before playing, `,
+    `and write that reasoning down — the opponent sees it and it is saved in the PGN.`,
     game.clock
       ? `This game is clocked (${game.clock.label}) — reply promptly or you will be flagged.`
       : '',

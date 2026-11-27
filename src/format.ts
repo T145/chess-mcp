@@ -54,6 +54,10 @@ export function formatState(game: Game, options: { includePgn?: boolean } = {}):
     `FEN: ${state.fen}`
   ];
 
+  if (state.lastMove?.note) {
+    lines.push(`Last move note: ${state.lastMove.note}`);
+  }
+
   if (state.clock) {
     lines.push(formatClockLine(state.clock, state.turn, Date.now()));
   }

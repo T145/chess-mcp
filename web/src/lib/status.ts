@@ -50,15 +50,19 @@ export function resultLabel(game: PublicGame): string | null {
 
 export function movePairs(moves: PublicGame['moves']): Array<{
   number: number;
-  white: string | null;
-  black: string | null;
+  white: PublicGame['moves'][number] | null;
+  black: PublicGame['moves'][number] | null;
 }> {
-  const rows: Array<{ number: number; white: string | null; black: string | null }> = [];
+  const rows: Array<{
+    number: number;
+    white: PublicGame['moves'][number] | null;
+    black: PublicGame['moves'][number] | null;
+  }> = [];
   for (let index = 0; index < moves.length; index += 2) {
     rows.push({
       number: index / 2 + 1,
-      white: moves[index]?.san ?? null,
-      black: moves[index + 1]?.san ?? null
+      white: moves[index] ?? null,
+      black: moves[index + 1] ?? null
     });
   }
   return rows;

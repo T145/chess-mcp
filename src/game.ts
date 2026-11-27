@@ -115,6 +115,17 @@ function pgnResult(status: GameStatus): string {
   return '1/2-1/2';
 }
 
+function cleanNote(note: string | undefined): string | undefined {
+  if (!note) return undefined;
+  // PGN comments cannot contain braces or newlines, and notes stay short.
+  const cleaned = note
+    .replace(/[{}]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 500);
+  return cleaned.length > 0 ? cleaned : undefined;
+}
+
 function statusFromPosition(chess: Chess): GameStatus {
   if (chess.isCheckmate()) {
     return {
@@ -326,7 +337,7 @@ export class Game {
     this.updatedAt = Date.now();
   }
 
-  applyMove(input: MoveInput, now: number = Date.now()): MoveRecord {
+  applyMove(input: MoveInput, now: number = Date.now(), note?: string): MoveRecord {
     this.settleClock(now);
     this.startClock(now);
     if (!this.isPlaying) {
@@ -345,12 +356,14 @@ export class Game {
       );
     }
 
+    const cleanedNote = cleanNote(note);
     const record: MoveRecord = {
       san: move.san,
       from: move.from,
       to: move.to,
       color: toColor(move.color),
-      ...(move.promotion ? { promotion: move.promotion } : {})
+      ...(move.promotion ? { promotion: move.promotion } : {}),
+      ...(cleanedNote ? { note: cleanedNote } : {})
     };
 
     this.moves.push(record);
@@ -456,6 +469,32 @@ export class Game {
     };
   }
 
+  /**
+   * PGN including move notes as `{comments}`, the usual place for annotations.
+   * chess.js has no comment API, so comments are spliced into its movetext in
+   * move order.
+   */
+  pgnWithNotes(): string {
+    const pgn = this.chess.pgn();
+    if (!this.moves.some((move) => move.note)) return pgn;
+
+    const bodyStart = pgn.indexOf('\n\n');
+    let output = pgn;
+    let cursor = bodyStart === -1 ? 0 : bodyStart + 2;
+
+    for (const move of this.moves) {
+      if (!move.note) continue;
+      const at = output.indexOf(move.san, cursor);
+      if (at === -1) continue;
+      const after = at + move.san.length;
+      const comment = ` {${move.note}}`;
+      output = output.slice(0, after) + comment + output.slice(after);
+      cursor = after + comment.length;
+    }
+
+    return output;
+  }
+
   toPublic(): PublicGame {
     const seats: Record<Color, PublicSeat> = {
       white: { kind: this.seats.white.kind, name: this.seats.white.name },
@@ -473,7 +512,7 @@ export class Game {
       lastMove: this.lastMove ? { ...this.lastMove } : null,
       drawOffer: this.drawOffer,
       legalMoves: this.legalMoves(),
-      pgn: this.chess.pgn(),
+      pgn: this.pgnWithNotes(),
       clock: this.clock ? { ...this.clock } : null,
       createdAt: this.createdAt,
       updatedAt: this.updatedAt

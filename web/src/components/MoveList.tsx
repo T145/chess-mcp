@@ -1,7 +1,25 @@
 import { useEffect, useRef } from 'react';
 
-import type { PublicGame } from '../../../src/shared/protocol';
+import type { MoveRecord, PublicGame } from '../../../src/shared/protocol';
 import { movePairs } from '../lib/status';
+
+function MoveCell({ move }: { move: MoveRecord | null }) {
+  if (!move) return <span />;
+  if (!move.note) return <span className="text-ink">{move.san}</span>;
+
+  return (
+    <span
+      className="cursor-help border-b border-dotted border-accent/60 text-ink"
+      title={move.note}
+      aria-label={`${move.san}: ${move.note}`}
+    >
+      {move.san}
+      <span className="ml-0.5 text-accent-strong" aria-hidden>
+        •
+      </span>
+    </span>
+  );
+}
 
 export function MoveList({ game }: { game: PublicGame }) {
   const rows = movePairs(game.moves);
@@ -31,8 +49,8 @@ export function MoveList({ game }: { game: PublicGame }) {
               }`}
             >
               <span className="text-muted">{row.number}.</span>
-              <span className="text-ink">{row.white ?? ''}</span>
-              <span className="text-ink">{row.black ?? ''}</span>
+              <MoveCell move={row.white} />
+              <MoveCell move={row.black} />
             </div>
           ))
         )}

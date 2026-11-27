@@ -46,6 +46,8 @@ export interface MoveRecord {
   to: string;
   color: Color;
   promotion?: string;
+  /** Optional reasoning the mover attached to this move (empty for human moves). */
+  note?: string;
 }
 
 export interface GameStatus {
@@ -101,6 +103,8 @@ export type MoveInput =
 export interface MoveRequest {
   move: MoveInput;
   token?: string;
+  /** Optional reasoning for this move, saved with it and shown to the opponent. */
+  note?: string;
 }
 
 export interface DrawRequest {

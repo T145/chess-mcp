@@ -125,7 +125,7 @@ function parseSeat(value: unknown): SeatState | null {
 
 function parseMove(value: unknown): MoveRecord | null {
   if (!isRecord(value)) return null;
-  const { san, from, to, color, promotion } = value;
+  const { san, from, to, color, promotion, note } = value;
   if (
     typeof san !== 'string' ||
     typeof from !== 'string' ||
@@ -135,12 +135,14 @@ function parseMove(value: unknown): MoveRecord | null {
     return null;
   }
   if (promotion !== undefined && typeof promotion !== 'string') return null;
+  if (note !== undefined && typeof note !== 'string') return null;
   return {
     san,
     from,
     to,
     color,
-    ...(typeof promotion === 'string' ? { promotion } : {})
+    ...(typeof promotion === 'string' ? { promotion } : {}),
+    ...(typeof note === 'string' && note.length > 0 ? { note } : {})
   };
 }
 

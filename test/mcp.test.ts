@@ -225,6 +225,29 @@ describe('MCP tools', () => {
     }
   });
 
+  it('passes move notes to the opponent and into the PGN', async () => {
+    const harness = await setup();
+    try {
+      const a = await harness.connect();
+      const b = await harness.connect();
+      const { gameId, whiteToken } = await createSeatedGame(a, b);
+
+      const note = 'Taking the centre; watch ...d5';
+      const moved = await a.callTool({
+        name: 'make_move',
+        arguments: { game_id: gameId, move: 'e4', seat_token: whiteToken, note }
+      });
+      expect(moved.isError).toBeFalsy();
+      expect(textOf(moved)).toContain(`Last move note: ${note}`);
+
+      const state = await b.callTool({ name: 'get_game', arguments: { game_id: gameId } });
+      expect(textOf(state)).toContain(`Last move note: ${note}`);
+      expect(textOf(state)).toContain(`1. e4 {${note}}`);
+    } finally {
+      await harness.close();
+    }
+  });
+
   it('creates clocked games from a preset and rejects unknown presets', async () => {
     const harness = await setup();
     try {

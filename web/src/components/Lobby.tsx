@@ -27,7 +27,11 @@ function SeatRow({ game, color }: { game: PublicGame; color: Color }) {
     <div className="flex items-center gap-2 text-sm">
       <span
         className={`h-2.5 w-2.5 rounded-full ${
-          color === 'white' ? 'bg-slate-100' : 'bg-slate-700 ring-1 ring-slate-500'
+          // The border keeps both swatches exactly 10px wide; an outer ring made
+          // the black dot 2px larger and look off-centre next to the white one.
+          color === 'white'
+            ? 'border border-slate-300 bg-slate-100'
+            : 'border border-slate-500 bg-slate-700'
         } ${active ? 'live-dot ring-2 ring-accent/50' : ''}`}
         aria-hidden
       />
@@ -118,7 +122,7 @@ function GameCard({ game, onJoin, onSwap, busy }: GameCardProps) {
 }
 
 export function Lobby({ onNewGame }: { onNewGame: () => void }) {
-  const { games, connected } = useLive();
+  const { games } = useLive();
   const [pending, setPending] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -158,10 +162,6 @@ export function Lobby({ onNewGame }: { onNewGame: () => void }) {
     <div className="mx-auto max-w-6xl px-4 pb-14 sm:px-6">
       <section className="flex flex-col gap-6 py-10 sm:py-14 lg:flex-row lg:items-end lg:justify-between">
         <div className="max-w-2xl">
-          <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-line bg-panel px-3 py-1 text-[11px] font-semibold uppercase tracking-wider text-muted">
-            <span className={`h-2 w-2 rounded-full ${connected ? 'bg-accent' : 'bg-amber-400'}`} />
-            {connected ? 'Live updates connected' : 'Reconnecting…'}
-          </div>
           <h1 className="text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">
             Play chess with <span className="text-accent-strong">any LLM</span>.
           </h1>
@@ -176,10 +176,6 @@ export function Lobby({ onNewGame }: { onNewGame: () => void }) {
             <span className="font-semibold text-ink">{active}</span>{' '}
             <span className="text-muted">live {active === 1 ? 'game' : 'games'}</span>
           </div>
-          <button type="button" className="btn btn-primary px-4 py-2.5" onClick={onNewGame}>
-            <PlusIcon className="h-4 w-4" />
-            New game
-          </button>
         </div>
       </section>
 

@@ -452,9 +452,6 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
   return (
     <div className="mx-auto flex h-full w-full max-w-7xl flex-col px-3 pb-3 pt-2 sm:px-6 lg:pb-4">
       <div className="flex shrink-0 flex-wrap items-center gap-2">
-        <Link to="/" className="btn btn-ghost -ml-2 px-2 py-1 text-xs">
-          ← Lobby
-        </Link>
         <span className="chip">Game {game.id}</span>
         {game.clock && <span className="chip">{describeTimeControl(game.clock)}</span>}
         {hotseat && <span className="chip chip-open">Hotseat</span>}

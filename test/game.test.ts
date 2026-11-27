@@ -125,4 +125,54 @@ describe('Game rules', () => {
     expect(game.boardAscii()).toContain('a b c d e f g h');
     expect(game.toPublic().pgn).toContain('1. e4');
   });
+
+  it('leaves the PGN result open while the game is running', () => {
+    const game = makeGame();
+    game.applyMove('e4');
+
+    expect(game.toPublic().pgn).toContain('[Result "*"]');
+    expect(game.toPublic().pgn.trimEnd()).toMatch(/\*$/);
+  });
+
+  it('writes the PGN result when checkmate ends the game', () => {
+    const game = makeGame();
+    for (const move of ['f3', 'e5', 'g4', 'Qh4#']) {
+      game.applyMove(move);
+    }
+
+    expect(game.toPublic().pgn).toContain('[Result "0-1"]');
+    expect(game.toPublic().pgn.trimEnd()).toMatch(/0-1$/);
+  });
+
+  it('writes the PGN result when a player resigns', () => {
+    const game = makeGame();
+    game.applyMove('e4');
+    game.resign('black');
+
+    expect(game.toPublic().pgn).toContain('[Result "1-0"]');
+    expect(game.toPublic().pgn.trimEnd()).toMatch(/1-0$/);
+  });
+
+  it('writes the PGN result when a draw is agreed', () => {
+    const game = makeGame();
+    game.applyMove('e4');
+    game.applyMove('e5');
+    game.offerDraw('white');
+    game.acceptDraw('black');
+
+    expect(game.toPublic().pgn).toContain('[Result "1/2-1/2"]');
+    expect(game.toPublic().pgn.trimEnd()).toMatch(/1\/2-1\/2$/);
+  });
+
+  it('keeps the PGN result across a snapshot round trip', () => {
+    const game = makeGame();
+    game.applyMove('e4');
+    game.resign('white');
+
+    const restored = Game.fromSnapshot(game.toSnapshot());
+
+    expect(restored.currentStatus).toEqual(game.currentStatus);
+    expect(restored.toPublic().pgn).toContain('[Result "0-1"]');
+    expect(restored.toPublic().pgn.trimEnd()).toMatch(/0-1$/);
+  });
 });

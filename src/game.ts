@@ -98,6 +98,17 @@ function parseMoveInput(chess: Chess, input: MoveInput): Move {
   return chess.move(text.replace(/0/g, 'O'));
 }
 
+/**
+ * PGN Result tag value for a game status. `*` means the game is still running,
+ * otherwise it is the standard `1-0`, `0-1`, or `1/2-1/2` score.
+ */
+function pgnResult(status: GameStatus): string {
+  if (status.phase === 'playing') return '*';
+  if (status.winner === 'white') return '1-0';
+  if (status.winner === 'black') return '0-1';
+  return '1/2-1/2';
+}
+
 function statusFromPosition(chess: Chess): GameStatus {
   if (chess.isCheckmate()) {
     return {
@@ -175,6 +186,7 @@ export class Game {
         ? statusFromPosition(game.chess)
         : { ...snapshot.status };
     game.updatedAt = snapshot.updatedAt;
+    game.syncPgnHeaders();
     return game;
   }
 
@@ -206,9 +218,15 @@ export class Game {
     return this.isPlaying ? this.chess.moves() : [];
   }
 
+  /**
+   * Keep the PGN header tags in sync with the seats and the game result. Call
+   * this after anything that changes a player name or the game status, since
+   * chess.js writes the `Result` tag straight from its header map.
+   */
   syncPgnHeaders(): void {
     this.chess.setHeader('White', this.seats.white.name);
     this.chess.setHeader('Black', this.seats.black.name);
+    this.chess.setHeader('Result', pgnResult(this.status));
   }
 
   applyMove(input: MoveInput): MoveRecord {
@@ -240,6 +258,7 @@ export class Game {
     this.lastMove = record;
     this.drawOffer = null;
     this.status = statusFromPosition(this.chess);
+    this.syncPgnHeaders();
     this.updatedAt = Date.now();
     return { ...record };
   }
@@ -254,6 +273,7 @@ export class Game {
       reason: `${color} resigned`
     };
     this.drawOffer = null;
+    this.syncPgnHeaders();
     this.updatedAt = Date.now();
   }
 
@@ -280,6 +300,7 @@ export class Game {
     }
     this.status = { phase: 'draw', winner: null, reason: 'agreement' };
     this.drawOffer = null;
+    this.syncPgnHeaders();
     this.updatedAt = Date.now();
   }
 

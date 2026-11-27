@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useState, type CSSProperties } from 'react';
 
 import type { Color, DrawAction, MoveInput, PublicGame } from '../../../src/shared/protocol';
 import { api } from '../lib/api';
@@ -17,34 +17,37 @@ import { InvitePanel } from './InvitePanel';
 import { MoveList } from './MoveList';
 import { PlayerCard } from './PlayerCard';
 
+const BOARD_FRAME_STYLE: CSSProperties = { maxWidth: 'min(76vh, 680px)' };
+
 function opposite(color: Color): Color {
   return color === 'white' ? 'black' : 'white';
+}
+
+function drawSeatFor(
+  turn: Color,
+  drawOffer: Color | null,
+  hotseat: boolean,
+  action: DrawAction
+): Color | undefined {
+  if (!hotseat) return undefined;
+  if (action === 'offer') return turn;
+  return drawOffer ? opposite(drawOffer) : undefined;
+}
+
+function statusHint(
+  game: PublicGame,
+  hotseat: boolean,
+  canMove: boolean,
+  result: string | null
+): string {
+  if (game.status.phase !== 'playing') return result ?? 'Game over';
+  if (hotseat) return 'Hotseat: move either side';
+  return canMove ? 'Your move' : 'Waiting for the opponent';
 }
 
 export function GameView({ gameId }: { gameId: string }) {
   const { games, loaded } = useLive();
   const game = games[gameId];
-
-  const [identity, setIdentity] = useState<PlayerIdentity | null>(() => getIdentity(gameId));
-  const [orientation, setOrientation] = useState<'white' | 'black'>(
-    () => getIdentity(gameId)?.seat ?? 'white'
-  );
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [copied, setCopied] = useState(false);
-
-  const run = async (action: () => Promise<{ game: PublicGame }>): Promise<void> => {
-    setBusy(true);
-    setError(null);
-    try {
-      const result = await action();
-      mergeGame(result.game);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(false);
-    }
-  };
 
   if (!game) {
     if (!loaded) {
@@ -68,6 +71,34 @@ export function GameView({ gameId }: { gameId: string }) {
     );
   }
 
+  return <GameSession key={game.id} game={game} gameId={gameId} />;
+}
+
+function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
+  const [identity, setIdentity] = useState<PlayerIdentity | null>(() => getIdentity(gameId));
+  const [orientation, setOrientation] = useState<'white' | 'black'>(
+    () => identity?.seat ?? 'white'
+  );
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const run = useCallback(
+    async (action: () => Promise<{ game: PublicGame }>): Promise<void> => {
+      setBusy(true);
+      setError(null);
+      try {
+        const result = await action();
+        mergeGame(result.game);
+      } catch (cause) {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      } finally {
+        setBusy(false);
+      }
+    },
+    []
+  );
+
   const mySeat = identity?.seat ?? null;
   const hotseat = game.seats.white.kind === 'open' && game.seats.black.kind === 'open';
   const canMove =
@@ -77,38 +108,41 @@ export function GameView({ gameId }: { gameId: string }) {
   const topColor: Color = orientation === 'white' ? 'black' : 'white';
   const bottomColor: Color = opposite(topColor);
 
-  const makeMove = (move: MoveInput): void => {
-    void run(() => api.move(game.id, move, identity?.token));
-  };
+  const makeMove = useCallback(
+    (move: MoveInput): void => {
+      void run(() => api.move(game.id, move, identity?.token));
+    },
+    [game.id, identity?.token, run]
+  );
 
-  const join = (seat: Color): void => {
-    void run(async () => {
-      const result = await api.joinGame(game.id, { name: getPlayerName(), seat });
-      const next = { seat, token: result.token };
-      saveIdentity(game.id, next);
-      setIdentity(next);
-      setOrientation(seat);
-      return result;
-    });
-  };
+  const join = useCallback(
+    (seat: Color): void => {
+      void run(async () => {
+        const result = await api.joinGame(game.id, { name: getPlayerName(), seat });
+        const next = { seat, token: result.token };
+        saveIdentity(game.id, next);
+        setIdentity(next);
+        setOrientation(seat);
+        return result;
+      });
+    },
+    [game.id, run]
+  );
 
-  const draw = (action: DrawAction): void => {
-    const seat = hotseat
-      ? action === 'offer'
-        ? game.turn
-        : game.drawOffer
-          ? opposite(game.drawOffer)
-          : undefined
-      : undefined;
-    void run(() => api.draw(game.id, action, identity?.token, seat));
-  };
+  const draw = useCallback(
+    (action: DrawAction): void => {
+      const seat = drawSeatFor(game.turn, game.drawOffer, hotseat, action);
+      void run(() => api.draw(game.id, action, identity?.token, seat));
+    },
+    [game.drawOffer, game.id, game.turn, hotseat, identity?.token, run]
+  );
 
-  const resign = (): void => {
+  const resign = useCallback((): void => {
     if (!window.confirm('Resign this game?')) return;
     void run(() => api.resign(game.id, identity?.token));
-  };
+  }, [game.id, identity?.token, run]);
 
-  const deleteGame = (): void => {
+  const deleteGame = useCallback((): void => {
     if (!window.confirm('Delete this game for everyone?')) return;
     void (async () => {
       setBusy(true);
@@ -123,9 +157,9 @@ export function GameView({ gameId }: { gameId: string }) {
         setBusy(false);
       }
     })();
-  };
+  }, [game.id]);
 
-  const copyPgn = async (): Promise<void> => {
+  const copyPgn = useCallback(async (): Promise<void> => {
     if (!game.pgn) return;
     try {
       await navigator.clipboard.writeText(game.pgn);
@@ -134,7 +168,20 @@ export function GameView({ gameId }: { gameId: string }) {
     } catch {
       setCopied(false);
     }
-  };
+  }, [game.pgn]);
+
+  const handleCopyPgn = useCallback((): void => {
+    void copyPgn();
+  }, [copyPgn]);
+
+  const flipBoard = useCallback((): void => {
+    setOrientation((current) => (current === 'white' ? 'black' : 'white'));
+  }, []);
+
+  const handleAcceptDraw = useCallback((): void => draw('accept'), [draw]);
+  const handleDeclineDraw = useCallback((): void => draw('decline'), [draw]);
+  const handleOfferDraw = useCallback((): void => draw('offer'), [draw]);
+
   const canRespondToDraw = Boolean(
     game.drawOffer && (hotseat || (mySeat !== null && game.drawOffer !== mySeat))
   );
@@ -157,7 +204,7 @@ export function GameView({ gameId }: { gameId: string }) {
           <button
             type="button"
             className="btn btn-ghost px-2"
-            onClick={() => setOrientation(orientation === 'white' ? 'black' : 'white')}
+            onClick={flipBoard}
             title="Flip board"
           >
             <FlipIcon className="h-4 w-4" />
@@ -174,7 +221,7 @@ export function GameView({ gameId }: { gameId: string }) {
 
       <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
         <section className="min-w-0">
-          <div className="mx-auto w-full" style={{ maxWidth: 'min(76vh, 680px)' }}>
+          <div className="mx-auto w-full" style={BOARD_FRAME_STYLE}>
             <PlayerCard
               color={topColor}
               game={game}
@@ -201,15 +248,7 @@ export function GameView({ gameId }: { gameId: string }) {
             <div className="mt-3 flex items-center justify-between gap-3 rounded-xl border border-line bg-panel px-3 py-2.5">
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold">{describeStatus(game)}</p>
-                <p className="text-xs text-muted">
-                  {game.status.phase === 'playing'
-                    ? hotseat
-                      ? 'Hotseat: move either side'
-                      : canMove
-                        ? 'Your move'
-                        : 'Waiting for the opponent'
-                    : result}
-                </p>
+                <p className="text-xs text-muted">{statusHint(game, hotseat, canMove, result)}</p>
               </div>
               {game.status.phase === 'playing' && game.inCheck && (
                 <span className="chip chip-open">Check</span>
@@ -242,7 +281,7 @@ export function GameView({ gameId }: { gameId: string }) {
                       type="button"
                       className="btn btn-primary flex-1 py-1.5 text-xs"
                       disabled={busy}
-                      onClick={() => draw('accept')}
+                      onClick={handleAcceptDraw}
                     >
                       Accept
                     </button>
@@ -250,7 +289,7 @@ export function GameView({ gameId }: { gameId: string }) {
                       type="button"
                       className="btn btn-secondary flex-1 py-1.5 text-xs"
                       disabled={busy}
-                      onClick={() => draw('decline')}
+                      onClick={handleDeclineDraw}
                     >
                       Decline
                     </button>
@@ -266,7 +305,7 @@ export function GameView({ gameId }: { gameId: string }) {
                     type="button"
                     className="btn btn-secondary flex-1 text-xs"
                     disabled={busy || Boolean(game.drawOffer)}
-                    onClick={() => draw('offer')}
+                    onClick={handleOfferDraw}
                   >
                     <HandshakeIcon className="h-4 w-4" />
                     {hotseat ? `Offer draw (${game.turn})` : 'Offer draw'}
@@ -300,7 +339,7 @@ export function GameView({ gameId }: { gameId: string }) {
               type="button"
               className="btn btn-secondary flex-1 text-xs"
               disabled={!game.pgn}
-              onClick={() => void copyPgn()}
+              onClick={handleCopyPgn}
             >
               {copied ? <CheckIcon className="h-4 w-4" /> : <CopyIcon className="h-4 w-4" />}
               {copied ? 'PGN copied' : 'Copy PGN'}

@@ -1,0 +1,8 @@
+{
+  "editor.codeActionsOnSave": {
+    "source.fixAll.oxc": "explicit"
+  },
+  "oxc.lint.run": "onType",
+  "oxc.requireConfig": true,
+  "oxc.unusedDisableDirectives": "deny"
+}

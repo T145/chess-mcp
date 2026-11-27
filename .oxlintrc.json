@@ -1,0 +1,64 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": [
+    "typescript",
+    "react",
+    "jsx-a11y",
+    "import",
+    "promise",
+    "node",
+    "vitest",
+    "unicorn",
+    "oxc"
+  ],
+  "env": {
+    "browser": true,
+    "node": true,
+    "builtin": true
+  },
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error",
+    "perf": "error",
+    "pedantic": "off",
+    "style": "off",
+    "restriction": "off",
+    "nursery": "off"
+  },
+  "ignorePatterns": ["dist/**", "node_modules/**", "coverage/**", "*.tgz"],
+  "settings": {
+    "react": {
+      "version": "19.3.1"
+    }
+  },
+  "rules": {
+    "no-console": "error",
+    "eqeqeq": "error",
+    "no-var": "error",
+    "prefer-const": "error",
+    "typescript/no-explicit-any": "error",
+    "typescript/no-non-null-assertion": "error",
+    "typescript/consistent-type-imports": "error",
+    "import/no-cycle": "error",
+    "import/no-duplicates": "error",
+    "import/no-unassigned-import": ["error", { "allow": ["**/*.css"] }],
+    "unicorn/prefer-node-protocol": "error",
+    "promise/param-names": "error",
+    "react/self-closing-comp": "error",
+    "react/react-in-jsx-scope": "off"
+  },
+  "overrides": [
+    {
+      "files": ["src/**/*.ts", "test/**/*.ts"],
+      "rules": {
+        "no-console": "off"
+      }
+    },
+    {
+      "files": ["test/**/*.ts"],
+      "rules": {
+        "typescript/no-non-null-assertion": "off"
+      }
+    }
+  ]
+}

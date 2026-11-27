@@ -1,0 +1,60 @@
+{
+  "name": "chess-mcp",
+  "version": "0.1.0",
+  "description": "Local chess web app and MCP server for humans vs LLMs and LLM vs LLM play",
+  "type": "module",
+  "license": "Apache-2.0",
+  "bin": {
+    "chess-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts --dev",
+    "build": "npm run build:server && npm run build:web",
+    "build:server": "tsc -p tsconfig.json",
+    "build:web": "tsc -p tsconfig.web.json && vite build",
+    "start": "node dist/index.js",
+    "lint": "oxlint --deny-warnings --report-unused-disable-directives .",
+    "lint:fix": "oxlint --fix .",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.web.json && tsc -p tsconfig.test.json",
+    "check": "npm run lint && npm run typecheck && npm test",
+    "validate": "npm run check && npm run build",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/express": "^2.0.2",
+    "@modelcontextprotocol/node": "^2.1.2",
+    "@modelcontextprotocol/server": "^2.4.0",
+    "chess.js": "^1.4.0",
+    "express": "^5.3.0",
+    "ws": "^8.23.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "^2.4.0",
+    "@tailwindcss/vite": "^4.3.5",
+    "@types/express": "^5.0.6",
+    "@types/node": "^24.19.4",
+    "@types/react": "^19.3.3",
+    "@types/react-dom": "^19.3.0",
+    "@types/ws": "^8.18.2",
+    "@vitejs/plugin-react": "^6.3.0",
+    "oxlint": "^1.95.0",
+    "react": "^19.3.1",
+    "react-chessboard": "^5.12.4",
+    "react-dom": "^19.3.1",
+    "tailwindcss": "^4.3.5",
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vite": "^8.4.0",
+    "vitest": "^5.1.2"
+  }
+}

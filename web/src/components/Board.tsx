@@ -289,9 +289,10 @@ export function Board({
     onMove({ from, to, promotion });
   };
 
-  const arrowMove = bestMove ?? (lastMove ? { from: lastMove.from, to: lastMove.to } : null);
-  const arrowColor = bestMove ? 'rgba(124, 240, 109, 0.9)' : 'rgba(255, 213, 79, 0.72)';
-  const arrowShape = arrowMove ? arrowGeometry(orientation, arrowMove.from, arrowMove.to) : null;
+  // Played moves are shown by the lit from/to squares, so the arrow is reserved
+  // for the engine's recommendation in review mode.
+  const arrowColor = 'rgba(124, 240, 109, 0.9)';
+  const arrowShape = bestMove ? arrowGeometry(orientation, bestMove.from, bestMove.to) : null;
 
   return (
     <div className="board-shell relative">

@@ -177,6 +177,8 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
   const reviewState = reviews[gameId] ?? null;
   const review = reviewState?.review ?? null;
   const [selectedPly, setSelectedPly] = useState<number | null>(null);
+  // With no explicit selection, annotate the final move (as Chess.com does).
+  const reviewPly = selectedPly ?? (review ? review.moves.length : null);
   const [reviewBusy, setReviewBusy] = useState(false);
   const [identity, setIdentity] = useState<PlayerIdentity | null>(() => getIdentity(gameId));
   const [orientation, setOrientation] = useState<'white' | 'black'>(
@@ -243,7 +245,11 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
     if (review) for (const move of review.moves) map[move.ply] = move.quality;
     return map;
   }, [review]);
-  const bestArrow = useMemo(() => bestMoveArrow(review, selectedPly), [review, selectedPly]);
+  const displayedQuality = useMemo(() => {
+    if (!review || reviewPly === null || reviewPly < 1) return null;
+    return review.moves[reviewPly - 1]?.quality ?? null;
+  }, [review, reviewPly]);
+  const bestArrow = useMemo(() => bestMoveArrow(review, reviewPly), [review, reviewPly]);
   // Colors can only be exchanged before the first move, and only by a seated player.
   const canSwapColors =
     identity !== null && game.status.phase === 'playing' && game.moves.length === 0;
@@ -527,7 +533,8 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
                   orientation={orientation}
                   canMove={canMove && !busy}
                   onMove={makeMove}
-                  bestMove={isReviewing ? bestArrow : null}
+                  bestMove={bestArrow}
+                  moveQuality={displayedQuality}
                   {...(isReviewing
                     ? { position: displayFen, lastMove: displayLastMove }
                     : {})}

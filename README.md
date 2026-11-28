@@ -197,7 +197,9 @@ review alongside the game. Open the **Review** tab on the game page (or call the
 - an evaluation graph and a **vertical eval bar to the left of the board**;
 - move badges plus the complete annotated move list; click any move (or use the
   navigation buttons) to step through the game on the board, with the clock as
-  it stood after that move.
+  it stood after that move. The board highlights the played move in the badge's
+  colour, pins the badge to the destination square's top-right corner, and draws
+  a Chess.com-style green arrow for the engine's recommended move.
 
 ### Engine setup
 
@@ -225,6 +227,16 @@ The project itself stays Apache-2.0.
 Analysis uses depth 14 and MultiPV 2 by default, one review at a time. Labels are
 heuristic (win-probability loss, only-move detection, and a material-sacrifice
 check for brilliant moves), not a clone of Chess.com's proprietary algorithm.
+
+The move labels in the web app use Chess.com's published badge SVGs (18×18
+classification icons, plus larger `move-*` variants), mirrored from
+`https://www.chess.com/bundles/web/images/color-icons/` into
+`web/public/badges/` so reviews render without a network connection. All 21
+published assets are included — the classifications used by the app (brilliant,
+great find, best, excellent, good, inaccuracy, mistake, blunder, forced) plus
+the unused book, miss, missed-win, and `move-*` variants. The UI falls back to
+its own glyph if an asset is missing. Badge artwork remains Chess.com's, is not
+covered by this project's Apache-2.0 license, and is bundled for local use only.
 
 ## MCP tools
 

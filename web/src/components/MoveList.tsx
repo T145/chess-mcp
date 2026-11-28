@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import type { MoveQuality, MoveRecord, PublicGame } from '../../../src/shared/protocol';
 import { QUALITY_STYLES } from '../lib/review';
 import { movePairs } from '../lib/status';
+import { MoveBadge } from './MoveBadge';
 
 interface MoveCellProps {
   move: MoveRecord | null;
@@ -15,9 +16,9 @@ interface MoveCellProps {
 function MoveCell({ move, ply, quality, selected, onSelect }: MoveCellProps) {
   if (!move) return <span />;
 
-  const style = quality ? QUALITY_STYLES[quality] : null;
   const content = (
     <>
+      {quality && <MoveBadge quality={quality} size={13} className="mr-1 align-[-2px]" />}
       <span
         className={
           move.note
@@ -32,11 +33,6 @@ function MoveCell({ move, ply, quality, selected, onSelect }: MoveCellProps) {
       {move.note && (
         <span className="ml-0.5 text-accent-strong" aria-hidden>
           •
-        </span>
-      )}
-      {style?.symbol && (
-        <span className={`ml-0.5 text-[11px] font-bold ${style.className}`} aria-hidden>
-          {style.symbol}
         </span>
       )}
     </>

@@ -2,9 +2,16 @@ import { Chess, SQUARES, type Square } from 'chess.js';
 import { Chessboard, getRelativeCoords } from 'react-chessboard';
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 
-import type { MoveInput, MoveRecord, PublicGame } from '../../../src/shared/protocol';
+import type {
+  MoveInput,
+  MoveQuality,
+  MoveRecord,
+  PublicGame
+} from '../../../src/shared/protocol';
 import { createPieceRenderers, PieceImage } from '../lib/pieceRenderers';
 import { usePieceTheme } from '../lib/pieceThemes';
+import { QUALITY_STYLES } from '../lib/review';
+import { MoveBadge } from './MoveBadge';
 
 interface BoardProps {
   game: PublicGame;
@@ -17,6 +24,8 @@ interface BoardProps {
   lastMove?: MoveRecord | null;
   /** Review mode: draw a green arrow to the engine's recommended move. */
   bestMove?: { from: string; to: string } | null;
+  /** Review mode: Chess.com-style badge and square colours for this move. */
+  moveQuality?: MoveQuality | null;
 }
 
 interface PendingPromotion {
@@ -58,6 +67,19 @@ const BOARD_COLUMNS = 8;
 const BOARD_ROWS = 8;
 const SQUARE_SIZE = BOARD_VIEWBOX / BOARD_COLUMNS;
 
+/** Chess.com-like green recommendation arrow, in fractions of a square. */
+const ARROW_COLOR = 'rgba(151, 189, 77, 0.92)';
+const ARROW_START_OFFSET = 0.3;
+const ARROW_TIP_INSET = 0.1;
+const ARROW_HEAD_LENGTH = 0.36;
+const ARROW_HEAD_HALF_WIDTH = 0.26;
+const ARROW_STEM_WIDTH = 0.2;
+
+/** Chess.com draws the review badge centred at 95% / 5% of the destination square. */
+const BADGE_SIZE_RATIO = 0.3;
+const BADGE_X_RATIO = 0.95;
+const BADGE_Y_RATIO = 0.05;
+
 /**
  * Build a clean arrow with a stem that stops at the triangle's base. Drawing
  * the head separately avoids react-chessboard's marker/stem overlap. Knight
@@ -92,18 +114,18 @@ function arrowGeometry(
   const leadY = elbow ? elbow.y - from.y : dy;
   const leadLength = Math.hypot(leadX, leadY);
   const start = {
-    x: from.x + (leadX / leadLength) * SQUARE_SIZE * 0.12,
-    y: from.y + (leadY / leadLength) * SQUARE_SIZE * 0.12
+    x: from.x + (leadX / leadLength) * SQUARE_SIZE * ARROW_START_OFFSET,
+    y: from.y + (leadY / leadLength) * SQUARE_SIZE * ARROW_START_OFFSET
   };
   const tip = {
-    x: to.x - ux * SQUARE_SIZE * 0.28,
-    y: to.y - uy * SQUARE_SIZE * 0.28
+    x: to.x - ux * SQUARE_SIZE * ARROW_TIP_INSET,
+    y: to.y - uy * SQUARE_SIZE * ARROW_TIP_INSET
   };
   const base = {
-    x: tip.x - ux * SQUARE_SIZE * 0.24,
-    y: tip.y - uy * SQUARE_SIZE * 0.24
+    x: tip.x - ux * SQUARE_SIZE * ARROW_HEAD_LENGTH,
+    y: tip.y - uy * SQUARE_SIZE * ARROW_HEAD_LENGTH
   };
-  const halfWidth = SQUARE_SIZE * 0.16;
+  const halfWidth = SQUARE_SIZE * ARROW_HEAD_HALF_WIDTH;
   const left = { x: base.x + px * halfWidth, y: base.y + py * halfWidth };
   const right = { x: base.x - px * halfWidth, y: base.y - py * halfWidth };
 
@@ -129,6 +151,34 @@ function isSquare(value: string): value is Square {
   return SQUARE_SET.has(value);
 }
 
+interface BadgePosition {
+  left: number;
+  top: number;
+  size: number;
+}
+
+/**
+ * Position the badge over the destination square's top-right corner, the way
+ * Chess.com does: centred at 95% / 5% of the square, then kept inside the board.
+ */
+function badgePosition(
+  orientation: 'white' | 'black',
+  square: string
+): BadgePosition | null {
+  if (!SQUARE_NAME.test(square)) return null;
+  const center = getRelativeCoords(orientation, BOARD_VIEWBOX, BOARD_COLUMNS, BOARD_ROWS, square);
+  const size = SQUARE_SIZE * BADGE_SIZE_RATIO;
+  const left = center.x - SQUARE_SIZE / 2 + SQUARE_SIZE * BADGE_X_RATIO - size / 2;
+  const top = center.y - SQUARE_SIZE / 2 + SQUARE_SIZE * BADGE_Y_RATIO - size / 2;
+  const clamp = (value: number): number =>
+    Math.max(0, Math.min(BOARD_VIEWBOX - size, value));
+  return {
+    left: (clamp(left) / BOARD_VIEWBOX) * 100,
+    top: (clamp(top) / BOARD_VIEWBOX) * 100,
+    size: (size / BOARD_VIEWBOX) * 100
+  };
+}
+
 function kingSquare(chess: Chess, color: 'w' | 'b'): string | null {
   for (const row of chess.board()) {
     for (const piece of row) {
@@ -145,7 +195,8 @@ export function Board({
   onMove,
   position,
   lastMove: lastMoveOverride,
-  bestMove
+  bestMove,
+  moveQuality = null
 }: BoardProps) {
   const fen = position ?? game.fen;
   const lastMove = lastMoveOverride === undefined ? game.lastMove : lastMoveOverride;
@@ -156,6 +207,11 @@ export function Board({
   const [positionFen, setPositionFen] = useState(fen);
   const pieceTheme = usePieceTheme();
   const pieces = useMemo(() => createPieceRenderers(pieceTheme), [pieceTheme]);
+  const badge = useMemo(
+    () =>
+      moveQuality && lastMove ? badgePosition(orientation, lastMove.to) : null,
+    [lastMove, moveQuality, orientation]
+  );
 
   // Adjust transient UI state during render when the server position changes.
   // This avoids an effect that would cause an extra render pass.
@@ -185,8 +241,9 @@ export function Board({
     const styles: Record<string, CSSProperties> = {};
 
     if (lastMove) {
-      styles[lastMove.from] = { background: 'rgba(255, 213, 79, 0.28)' };
-      styles[lastMove.to] = { background: 'rgba(255, 213, 79, 0.36)' };
+      const highlight = moveQuality ? QUALITY_STYLES[moveQuality].highlight : null;
+      styles[lastMove.from] = { background: highlight ?? 'rgba(255, 213, 79, 0.28)' };
+      styles[lastMove.to] = { background: highlight ?? 'rgba(255, 213, 79, 0.36)' };
     }
 
     if (selected) {
@@ -217,7 +274,7 @@ export function Board({
     }
 
     return styles;
-  }, [chess, destinationMoves, lastMove, selected]);
+  }, [chess, destinationMoves, lastMove, moveQuality, selected]);
 
   const needsPromotion = (from: string, to: string): boolean => {
     if (!isSquare(from) || !isSquare(to)) return false;
@@ -297,7 +354,6 @@ export function Board({
 
   // Played moves are shown by the lit from/to squares, so the arrow is reserved
   // for the engine's recommendation in review mode.
-  const arrowColor = 'rgba(124, 240, 109, 0.9)';
   const arrowShape = bestMove ? arrowGeometry(orientation, bestMove.from, bestMove.to) : null;
 
   return (
@@ -323,6 +379,19 @@ export function Board({
           allowDrawingArrows: false
         }}
       />
+      {badge && moveQuality && (
+        <div
+          className="pointer-events-none absolute z-20"
+          style={{
+            left: `${badge.left}%`,
+            top: `${badge.top}%`,
+            width: `${badge.size}%`,
+            height: `${badge.size}%`
+          }}
+        >
+          <MoveBadge quality={moveQuality} size="100%" className="h-full w-full" />
+        </div>
+      )}
       {arrowShape && (
         <svg
           viewBox={`0 0 ${BOARD_VIEWBOX} ${BOARD_VIEWBOX}`}
@@ -332,12 +401,18 @@ export function Board({
           <path
             d={arrowShape.stem}
             fill="none"
-            stroke={arrowColor}
-            strokeWidth={SQUARE_SIZE * 0.1}
+            stroke={ARROW_COLOR}
+            strokeWidth={SQUARE_SIZE * ARROW_STEM_WIDTH}
             strokeLinecap="round"
-            strokeLinejoin="miter"
+            strokeLinejoin="round"
           />
-          <polygon points={arrowShape.head} fill={arrowColor} />
+          <polygon
+            points={arrowShape.head}
+            fill={ARROW_COLOR}
+            stroke={ARROW_COLOR}
+            strokeWidth={SQUARE_SIZE * 0.04}
+            strokeLinejoin="round"
+          />
         </svg>
       )}
 

@@ -4,19 +4,89 @@ export interface QualityStyle {
   symbol: string;
   label: string;
   className: string;
+  /** Chess.com's published badge filename, relative to BADGE_ROOT. */
+  badge: string;
+  /** Chess.com's board highlight for the from/to squares (80% alpha). */
+  highlight: string;
 }
 
 export const QUALITY_STYLES: Record<MoveQuality, QualityStyle> = {
-  brilliant: { symbol: '!!', label: 'Brilliant', className: 'text-cyan-300' },
-  great: { symbol: '!', label: 'Great', className: 'text-sky-300' },
-  best: { symbol: '★', label: 'Best', className: 'text-emerald-300' },
-  excellent: { symbol: '✓', label: 'Excellent', className: 'text-emerald-200/80' },
-  good: { symbol: '', label: 'Good', className: 'text-ink' },
-  inaccuracy: { symbol: '?!', label: 'Inaccuracy', className: 'text-amber-300' },
-  mistake: { symbol: '?', label: 'Mistake', className: 'text-orange-300' },
-  blunder: { symbol: '??', label: 'Blunder', className: 'text-red-400' },
-  forced: { symbol: '', label: 'Forced', className: 'text-muted' }
+  brilliant: {
+    symbol: '!!',
+    label: 'Brilliant',
+    className: 'text-cyan-300',
+    badge: 'classification-brilliant.svg',
+    highlight: 'rgba(27, 172, 166, 0.8)'
+  },
+  great: {
+    symbol: '!',
+    label: 'Great',
+    className: 'text-sky-300',
+    badge: 'classification-great-find.svg',
+    highlight: 'rgba(92, 139, 176, 0.8)'
+  },
+  best: {
+    symbol: '★',
+    label: 'Best',
+    className: 'text-emerald-300',
+    badge: 'classification-best.svg',
+    highlight: 'rgba(151, 189, 77, 0.8)'
+  },
+  excellent: {
+    symbol: '✓',
+    label: 'Excellent',
+    className: 'text-emerald-200/80',
+    badge: 'classification-excellent.svg',
+    highlight: 'rgba(129, 182, 76, 0.8)'
+  },
+  good: {
+    symbol: '',
+    label: 'Good',
+    className: 'text-ink',
+    badge: 'classification-good.svg',
+    highlight: 'rgba(149, 183, 118, 0.8)'
+  },
+  inaccuracy: {
+    symbol: '?!',
+    label: 'Inaccuracy',
+    className: 'text-amber-300',
+    badge: 'classification-inaccuracy.svg',
+    highlight: 'rgba(247, 192, 69, 0.8)'
+  },
+  mistake: {
+    symbol: '?',
+    label: 'Mistake',
+    className: 'text-orange-300',
+    badge: 'classification-mistake.svg',
+    highlight: 'rgba(229, 143, 42, 0.8)'
+  },
+  blunder: {
+    symbol: '??',
+    label: 'Blunder',
+    className: 'text-red-400',
+    badge: 'classification-blunder.svg',
+    highlight: 'rgba(202, 52, 49, 0.8)'
+  },
+  forced: {
+    symbol: '',
+    label: 'Forced',
+    className: 'text-muted',
+    badge: 'classification-forced.svg',
+    highlight: 'rgba(129, 182, 76, 0.8)'
+  }
 };
+
+/**
+ * Chess.com serves the move-review badges from its public CDN. The complete set
+ * is mirrored into `web/public/badges` so reviews work offline; the SVGs are
+ * self-contained (colour and shape baked in).
+ */
+export const CHESSCOM_BADGE_ROOT = 'https://www.chess.com/bundles/web/images/color-icons';
+export const BADGE_ROOT = '/badges';
+
+export function badgeUrl(quality: MoveQuality): string {
+  return `${BADGE_ROOT}/${QUALITY_STYLES[quality].badge}`;
+}
 
 const BAD_QUALITIES = new Set(['inaccuracy', 'mistake', 'blunder']);
 

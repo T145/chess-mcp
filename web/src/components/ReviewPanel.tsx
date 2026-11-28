@@ -11,6 +11,7 @@ import type {
 import { MOVE_QUALITIES } from '../../../src/shared/protocol';
 import { formatEval, winProbability } from '../../../src/shared/eval';
 import { QUALITY_STYLES } from '../lib/review';
+import { MoveBadge } from './MoveBadge';
 
 interface ReviewPanelProps {
   game: PublicGame;
@@ -115,10 +116,10 @@ function QualityCounts({ review, color }: { review: ReviewSummary; color: 'white
         return (
           <span
             key={quality}
-            className="rounded border border-line bg-panel-2 px-1.5 py-0.5 text-[10px] font-semibold"
+            className="flex items-center gap-1 rounded border border-line bg-panel-2 px-1.5 py-0.5 text-[10px] font-semibold"
             title={style.label}
           >
-            <span className={style.className}>{style.symbol || style.label}</span>{' '}
+            <MoveBadge quality={quality} size={14} />
             <span className="text-ink">{counts[quality]}</span>
           </span>
         );
@@ -150,12 +151,12 @@ function ReviewMoveCell({
       title={detail}
       aria-label={`${move.san}, ${detail}`}
       onClick={() => onSelect(move.ply)}
-      className={`flex min-w-0 items-center gap-1 rounded px-1 py-0.5 text-left font-mono text-[12px] transition-colors ${
+      className={`flex min-w-0 items-center gap-0.5 rounded px-1 py-0.5 text-left font-mono text-[12px] transition-colors ${
         selected ? 'bg-accent/20' : 'hover:bg-white/5'
       }`}
     >
-      <span className={`w-3.5 shrink-0 text-[10px] font-bold ${style.className}`}>
-        {style.symbol}
+      <span className="flex w-5 shrink-0 items-center justify-start">
+        <MoveBadge quality={move.quality} size={14} />
       </span>
       <span className={selected ? 'font-semibold text-accent-strong' : 'text-ink'}>
         {move.san}

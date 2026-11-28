@@ -557,6 +557,7 @@ export class Game {
 
     return {
       id: this.id,
+      initialFen: this.initialFen,
       fen: this.chess.fen(),
       turn: this.turn,
       inCheck: this.chess.inCheck(),

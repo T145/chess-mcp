@@ -16,9 +16,11 @@ import type {
   PublicGame
 } from '../../../src/shared/protocol';
 import { readMaterial } from '../../../src/shared/material';
+import { bookForMoves, bookMoveFor, deepestOpening, fenAfterPly, firstBookDeviationPly, lastBookPly } from '../../../src/shared/openings';
 import { describeTimeControl, remainingMs } from '../../../src/shared/timeControl';
 import { api } from '../lib/api';
 import { mergeEngine, mergeGame, mergeReview, removeGame, useLive } from '../lib/live';
+import { loadOpeningsBook, useOpeningBook } from '../lib/openings';
 import {
   getIdentity,
   getPlayerName,
@@ -44,6 +46,7 @@ import {
 import { InvitePanel } from './InvitePanel';
 import { MoveControls } from './MoveControls';
 import { MoveList } from './MoveList';
+import { OpeningLabel } from './OpeningLabel';
 import { PlayerCard } from './PlayerCard';
 import { ReviewPanel } from './ReviewPanel';
 
@@ -82,9 +85,9 @@ function useFitSquare(reserve = 0) {
 }
 
 function fenAtPly(game: PublicGame, ply: number): string {
-  if (ply <= 0) return new Chess().fen();
+  if (ply <= 0) return new Chess(game.initialFen).fen();
   if (ply >= game.moves.length) return game.fen;
-  const chess = new Chess();
+  const chess = new Chess(game.initialFen);
   for (let index = 0; index < ply; index += 1) {
     const move = game.moves[index];
     if (!move) break;
@@ -174,6 +177,7 @@ export function GameView({ gameId }: { gameId: string }) {
 
 function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
   const { reviews, engine } = useLive();
+  const openingBook = useOpeningBook();
   const reviewState = reviews[gameId] ?? null;
   const review = reviewState?.review ?? null;
   const [selectedPly, setSelectedPly] = useState<number | null>(null);
@@ -240,16 +244,46 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
     () => readMaterial(displayFen, displayMoves),
     [displayFen, displayMoves]
   );
+  const bookPlies = useMemo(
+    () => (openingBook ? bookForMoves(game.initialFen, game.moves, openingBook) : []),
+    [openingBook, game.initialFen, game.moves]
+  );
+  const opening = useMemo(() => deepestOpening(bookPlies), [bookPlies]);
+  const openingFen = useMemo(() => {
+    const ply = opening ? lastBookPly(bookPlies) : null;
+    return ply === null ? null : fenAfterPly(game.initialFen, game.moves, ply);
+  }, [bookPlies, game.initialFen, game.moves, opening]);
   const qualities = useMemo(() => {
     const map: Partial<Record<number, MoveQuality>> = {};
+    // Live book labels are available before any review has run.
+    bookPlies.forEach((ply, index) => {
+      if (ply.book) map[index + 1] = 'book';
+    });
     if (review) for (const move of review.moves) map[move.ply] = move.quality;
     return map;
-  }, [review]);
+  }, [bookPlies, review]);
   const displayedQuality = useMemo(() => {
     if (!review || reviewPly === null || reviewPly < 1) return null;
     return review.moves[reviewPly - 1]?.quality ?? null;
   }, [review, reviewPly]);
-  const bestArrow = useMemo(() => bestMoveArrow(review, reviewPly), [review, reviewPly]);
+  // When the game leaves theory, point at what the book expected instead.
+  const shownPly = selectedPly ?? game.moves.length;
+  const deviationPly = useMemo(
+    () => (openingBook && bookPlies.length > 0 ? firstBookDeviationPly(bookPlies) : null),
+    [openingBook, bookPlies]
+  );
+  const bookArrow = useMemo(() => {
+    if (!openingBook || deviationPly === null || shownPly !== deviationPly) return null;
+    const continuation = bookMoveFor(fenAtPly(game, deviationPly - 1), openingBook);
+    if (!continuation) return null;
+    return { from: continuation.uci.slice(0, 2), to: continuation.uci.slice(2, 4) };
+  }, [openingBook, deviationPly, game, shownPly]);
+  // The book arrow replaces the engine arrow on the deviating ply; two arrows
+  // pointing at different "should have played" moves would be confusing.
+  const bestArrow = useMemo(
+    () => (bookArrow ? null : bestMoveArrow(review, reviewPly)),
+    [bookArrow, review, reviewPly]
+  );
   // Colors can only be exchanged before the first move, and only by a seated player.
   const canSwapColors =
     identity !== null && game.status.phase === 'playing' && game.moves.length === 0;
@@ -270,6 +304,13 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
       active = false;
     };
   }, [game.id, game.status.phase]);
+
+  useEffect(() => {
+    // Retry while the first-boot download may still be running.
+    if (openingBook) return;
+    void loadOpeningsBook();
+    // oxlint-disable-next-line react/exhaustive-effect-dependencies -- a new ply re-checks a first-boot download
+  }, [game.moves.length, openingBook]);
 
   useEffect(() => {
     if (engine) return undefined;
@@ -534,6 +575,7 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
                   canMove={canMove && !busy}
                   onMove={makeMove}
                   bestMove={bestArrow}
+                  bookMove={bookArrow}
                   moveQuality={displayedQuality}
                   {...(isReviewing
                     ? { position: displayFen, lastMove: displayLastMove }
@@ -647,12 +689,19 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
             )}
 
             {tab === 'moves' ? (
-              <MoveList
-                game={game}
-                qualities={qualities}
-                selectedPly={selectedPly}
-                onSelectPly={game.status.phase !== 'playing' ? selectPly : undefined}
-              />
+              <div className="flex min-h-0 flex-col lg:flex-1">
+                {opening && (
+                  <p className="shrink-0 border-b border-line px-3 py-1.5 text-[11px] leading-4 text-muted">
+                    <OpeningLabel opening={opening} fen={openingFen} />
+                  </p>
+                )}
+                <MoveList
+                  game={game}
+                  qualities={qualities}
+                  selectedPly={selectedPly}
+                  onSelectPly={game.status.phase !== 'playing' ? selectPly : undefined}
+                />
+              </div>
             ) : tab === 'review' && game.status.phase !== 'playing' ? (
               <ReviewPanel
                 game={game}
@@ -676,6 +725,9 @@ function GameSession({ game, gameId }: { game: PublicGame; gameId: string }) {
                       label="Time control"
                       value={game.clock ? describeTimeControl(game.clock) : 'Untimed'}
                     />
+                    {opening && (
+                      <DetailRow label="Opening" value={`${opening.name} (${opening.eco})`} />
+                    )}
                     <DetailRow label="Moves" value={`${game.moves.length} plies`} />
                   </dl>
                 </section>

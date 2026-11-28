@@ -5,6 +5,7 @@ import { buildReview, REVIEW_THRESHOLDS } from '../src/review/classify.js';
 import type { PositionEval, RawEngineLine } from '../src/engine/uci.js';
 import type { Color, GameStatus, MoveRecord } from '../src/shared/protocol.js';
 import { MATE_CP, winProbability } from '../src/shared/eval.js';
+import { normalizeFen } from '../src/shared/openings.js';
 
 const START = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 const PLAYING: GameStatus = { phase: 'playing', winner: null, reason: '' };
@@ -158,6 +159,50 @@ describe('review classification', () => {
     expect(review.evalGraph.at(-1)).toBe(-MATE_CP);
     expect(review.moves.at(-1)?.quality).toBe('best');
     expect(review.counts.black.best).toBe(2);
+  });
+
+  it('labels theory moves as book while keeping the engine metrics', () => {
+    const chess = new Chess(START);
+    const fens = [chess.fen()];
+    const moves: MoveRecord[] = [];
+    for (const san of ['e4', 'e5', 'Nf3', 'h6']) {
+      const move = chess.move(san);
+      moves.push(record(move));
+      fens.push(chess.fen());
+    }
+
+    const keys = fens.map((fen) => normalizeFen(fen));
+    const book = new Map<string, { eco: string; name: string } | null>();
+    book.set(keys[1]!, { eco: 'B00', name: "King's Pawn Game" });
+    book.set(keys[2]!, { eco: 'C20', name: 'Open Game' });
+    book.set(keys[3]!, { eco: 'C44', name: "King's Knight Opening" });
+
+    const review = buildReview({
+      gameId: 'bookgame',
+      initialFen: START,
+      moves,
+      fens,
+      analyses: fens.map((fen) => evaluation(fen, 20, 'e2e4')),
+      finalStatus: PLAYING,
+      engineName: 'Fakefish',
+      depth: 14,
+      durationMs: 1,
+      book,
+      now: 1
+    });
+
+    expect(review.moves.map((move) => move.quality)).toEqual([
+      'book',
+      'book',
+      'book',
+      'excellent'
+    ]);
+    expect(review.counts.white.book).toBe(2);
+    expect(review.counts.black.book).toBe(1);
+    expect(review.opening).toEqual({ eco: 'C44', name: "King's Knight Opening" });
+    expect(review.moves[0]?.opening?.eco).toBe('B00');
+    expect(review.moves[0]?.bestMoveUci).toBe('e2e4');
+    expect(review.accuracy.white).toBe(100);
   });
 
   it('rejects mismatched analysis input', () => {

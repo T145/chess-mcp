@@ -6,6 +6,7 @@ import { WebSocket } from 'ws';
 import { describe, expect, it } from 'vitest';
 
 import { createApp } from '../src/server/app.js';
+import type { AppOptions, OpeningsRoutes } from '../src/server/app.js';
 import { attachWebSocket, closeWebSocketServer } from '../src/server/ws.js';
 import type {
   CreateGameResponse,
@@ -21,9 +22,9 @@ interface TestServer {
   close: () => Promise<void>;
 }
 
-async function startServer(): Promise<TestServer> {
+async function startServer(options: AppOptions = {}): Promise<TestServer> {
   const store = new GameStore();
-  const { app, mcpHandler } = createApp(store);
+  const { app, mcpHandler } = createApp(store, options);
   const server = createServer(app);
   const wss = attachWebSocket(server, store);
 
@@ -345,6 +346,55 @@ describe('HTTP API and WebSocket', () => {
       );
       expect(start.status).toBe(503);
       expect(start.body.error).toMatch(/not enabled/i);
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('serves the opening book with an ETag and 503 until it is ready', async () => {
+    const notReady = await startServer();
+    try {
+      const response = await fetch(`${notReady.base}/api/openings/book`);
+      expect(response.status).toBe(503);
+      const status = await fetch(`${notReady.base}/api/openings`);
+      const statusBody = (await status.json()) as { openings: { phase: string } };
+      expect(statusBody.openings.phase).toBe('disabled');
+    } finally {
+      await notReady.close();
+    }
+
+    const text = '# chess-mcp openings v1\nrnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -\tB00\tTest\n';
+    let retries = 0;
+    const openings: OpeningsRoutes = {
+      statusInfo: () => ({
+        phase: 'ready',
+        positions: 1,
+        source: null,
+        error: null
+      }),
+      bookText: () => text,
+      etag: () => '"deadbeef"',
+      retry: () => {
+        retries += 1;
+      }
+    };
+
+    const server = await startServer({ openings });
+    try {
+      const response = await fetch(`${server.base}/api/openings/book`);
+      expect(response.status).toBe(200);
+      expect(response.headers.get('etag')).toBe('"deadbeef"');
+      expect(response.headers.get('content-type')).toContain('text/plain');
+      expect(await response.text()).toBe(text);
+
+      const cached = await fetch(`${server.base}/api/openings/book`, {
+        headers: { 'If-None-Match': '"deadbeef"' }
+      });
+      expect(cached.status).toBe(304);
+
+      const install = await fetch(`${server.base}/api/openings/install`, { method: 'POST' });
+      expect(install.status).toBe(202);
+      expect(retries).toBe(1);
     } finally {
       await server.close();
     }

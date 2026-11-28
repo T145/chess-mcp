@@ -29,7 +29,9 @@
     "check": "pnpm run lint && pnpm run typecheck && pnpm test",
     "validate": "pnpm run check && pnpm run build",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "openings:check": "tsx scripts/check-openings.ts",
+    "reviews:relabel": "tsx scripts/relabel-reviews.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/express": "^2.0.2",

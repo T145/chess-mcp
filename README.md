@@ -39,10 +39,10 @@ endpoint from one process.
 chess-mcp [options]
 
 --port <number>   Port to listen on (default: 3000, env: PORT)
---data-dir <dir>  Directory for saved games and the engine (env: CHESS_MCP_DATA_DIR)
+--data-dir <dir>  Directory for saved games, the engine, and runtime assets (env: CHESS_MCP_DATA_DIR)
 --engine <path>   Use a local Stockfish binary (env: CHESS_MCP_ENGINE)
 --engine-depth <n>  Analysis depth per position (default: 14)
---no-engine-download  Never download Stockfish or runtime theme assets automatically
+--no-engine-download  Never download Stockfish, piece themes, or opening data automatically
 --dev             Serve the React app with Vite middleware (HMR, no build)
 -h, --help        Show help
 ```
@@ -54,7 +54,8 @@ The server always binds to `127.0.0.1`. Open the printed URL in a browser.
 Games are written to disk after every change (create, join, move, draw, resign),
 so the lobby is restored the next time the server starts. Each game is a small
 JSON file under `<data-dir>/games/<game-id>.json`; completed reviews are stored
-next to them under `<data-dir>/reviews/<game-id>.json`.
+next to them under `<data-dir>/reviews/<game-id>.json`. Downloaded assets live
+beside them: `engine/`, `themes/`, and `openings/`.
 
 Default locations:
 
@@ -83,8 +84,8 @@ open, so server-managed sets appear as they become available.
 All non-default sets are downloaded at runtime into
 `<data-dir>/themes/<theme-id>/` and served from `/theme-assets/...`. The download
 starts with the server when automatic downloads are enabled and runs alongside
-the Stockfish install hook. Passing `--no-engine-download` disables both
-Stockfish and theme downloads.
+the Stockfish install hook. Passing `--no-engine-download` disables Stockfish,
+theme, and opening-book downloads.
 
 The Lichess sets use Apache-2.0, CC0-1.0, CC BY 4.0, CC BY-SA 4.0, or MIT; the
 Chess.com and Neo Angle sets are local-only and labelled “All rights reserved”.
@@ -192,8 +193,9 @@ When a game ends, the server analyses every position with Stockfish and stores a
 review alongside the game. Open the **Review** tab on the game page (or call the
 `review_game` MCP tool) to see:
 
-- accuracy for both players, plus counts of brilliant / great / best / excellent /
-  good / inaccuracy / mistake / blunder moves;
+- accuracy for both players, plus counts of book / brilliant / great / best /
+  excellent / good / inaccuracy / mistake / blunder moves;
+- the opening name and ECO code when the game followed known theory;
 - an evaluation graph and a **vertical eval bar to the left of the board**;
 - move badges plus the complete annotated move list; click any move (or use the
   navigation buttons) to step through the game on the board, with the clock as
@@ -217,8 +219,8 @@ that detects AVX2/AVX-512 etc. itself). Downloads are pinned to the release asse
 name, byte size, and SHA-256 digest, verified before the binary is extracted and
 run. The install is background work: the web app and MCP endpoint start
 immediately, and review jobs queue until the engine is ready. Pass
-`--no-engine-download` to disable both the engine and local theme downloads, and
-use `--engine` for a local build.
+`--no-engine-download` to disable Stockfish, theme, and opening-book downloads,
+and use `--engine` for a local build.
 
 The engine is GPL-3.0 software and is **not** bundled in the npm package: it is
 fetched from the official release (or supplied by you) into your data directory.
@@ -228,14 +230,56 @@ Analysis uses depth 14 and MultiPV 2 by default, one review at a time. Labels ar
 heuristic (win-probability loss, only-move detection, and a material-sacrifice
 check for brilliant moves), not a clone of Chess.com's proprietary algorithm.
 
+### Opening book
+
+Moves that follow known opening theory are labelled **Book** (the brown book
+badge), and the game shows the opening name and ECO code while it is still in
+theory. Detection runs without the engine, so the Moves tab shows it during play
+and the Review tab repeats it for finished games.
+
+The data is a pinned snapshot of
+[lichess-org/chess-openings](https://github.com/lichess-org/chess-openings)
+(CC0-1.0): 3,865 lines folded into 7,982 position-keyed entries. It is
+downloaded on first boot into `<data-dir>/openings/<tag>/` as five TSV files,
+each pinned by byte size and SHA-256 in `src/openings/release.ts` and verified
+before use. The derived position index (`book.tsv`) is cached beside them, so
+later boots read one file instead of replaying the lines. `pnpm openings:check`
+re-downloads the dataset into a temporary directory and spot-checks the Ruy
+Lopez.
+
+A game is "in book" only while *every* ply so far is in the dataset, starting
+from the standard initial position. Positions are matched by FEN (move counters
+ignored), so transpositions work, and the name shown is the deepest named
+position reached. Games started from a custom FEN are never labelled. Like the
+move labels, this is a dataset lookup rather than Chess.com's proprietary
+opening book.
+
+Book moves are displayed like any other classified move: the from/to squares are
+tinted in the book colour and the brown badge sits on the destination square.
+When a move leaves theory, the board draws a brown "book move" arrow at the
+continuation the dataset considers main (it prefers a named continuation, then
+the branch with the most follow-up theory, since ECO data has no move
+frequencies). That arrow replaces the green engine arrow on that ply.
+
+The ECO code next to the opening name is a discreet link (dotted underline) to
+the Lichess analysis board at the last book position. Its opening explorer is
+built from the same dataset, so it lists the position's continuations, results,
+and games; nothing is requested until you click it.
+
+Reviews are cached, so a review saved before the dataset existed would keep its
+old labels. Opening labels are therefore refreshed lazily when a cached review is
+opened — book moves keep the engine's verdict in `baseQuality`, so re-labelling
+never needs another Stockfish run. `pnpm reviews:relabel` does the same for every
+saved review at once.
+
 The move labels in the web app use Chess.com's published 18×18 classification
 badge SVGs, mirrored from
 `https://www.chess.com/bundles/web/images/color-icons/` into
 `web/public/badges/` so reviews render without a network connection. All 12
-classification assets are included — the nine used by the app (brilliant, great
-find, best, excellent, good, inaccuracy, mistake, blunder, forced) plus the
-unused book, miss, and missed-win. The UI falls back to its own glyph if an asset
-is missing. Badge artwork remains Chess.com's, is not covered by this project's
+classification assets are included — the ten used by the app (book, brilliant,
+great find, best, excellent, good, inaccuracy, mistake, blunder, forced) plus the
+unused miss and missed-win. The UI falls back to its own glyph if an asset is
+missing. Badge artwork remains Chess.com's, is not covered by this project's
 Apache-2.0 license, and is bundled for local use only.
 
 ## MCP tools
@@ -288,6 +332,9 @@ Legal moves (20): a6, a5, ...
 | `POST /api/games/:id/resign` | `{ token?, seat? }` |
 | `GET /api/engine` | Engine status: available / installing / unavailable / failed, download progress, depth |
 | `POST /api/engine/install` | Retry the automatic Stockfish install |
+| `GET /api/openings` | Opening-book status: phase, position count, data provenance |
+| `GET /api/openings/book` | Position index as text (`ETag`/`304` aware); `503` until downloaded |
+| `POST /api/openings/install` | Retry the opening-book download |
 | `GET /api/games/:id/review` | Review state, loading a saved review if present |
 | `POST /api/games/:id/review` | Start (or reuse) a review; `400` while the game is running |
 | `DELETE /api/games/:id` | Delete a game |
@@ -324,7 +371,8 @@ Key points:
   time, results are cached in memory and `<data-dir>/reviews/`, and progress is
   broadcast over the WebSocket. A saved review is reused after a restart.
 - **No ratings, accounts, chat, or remote access.** The server is loopback-only;
-  the Stockfish binary is the only external download and it is pinned by digest.
+  the external downloads are the Stockfish binary, the runtime piece themes, and
+  the opening dataset, each pinned and verified (the opening TSVs by SHA-256).
 
 ### Source layout
 
@@ -339,10 +387,13 @@ src/
   server/app.ts       Express REST routes + MCP mount + error handling
   server/ws.ts        WebSocket server, Origin check, review/engine broadcast
   engine/             Stockfish locate/download/verify, UCI client, lifecycle
+  openings/           Opening dataset download/verify, book build, service
   review/             Move classification, accuracy, review queue/persistence
   shared/protocol.ts  Types shared by server and web
+  shared/openings.ts  Position-keyed book lookup, shared by server and web
   shared/eval.ts      Win-probability/accuracy maths and eval formatting
 web/src/              React app: lobby, game view, board, review panel, live store
+scripts/              Maintenance checks (e.g. `pnpm openings:check`)
 test/                 Rules, store, review, engine, MCP, REST/WebSocket tests
 .oxlintrc.json        Strict Oxlint policy
 .github/workflows/    CI: lint, typecheck, test, build
@@ -431,11 +482,13 @@ checked in a headless browser, including a live WebSocket move update.
 - Saved games and reviews live in the current user's profile (see
   [Saved games](#saved-games)); the server does not encrypt them.
 - The first run downloads the official Stockfish release (~80 MB) into the data
-  directory, and the runtime piece themes (a few MB) in parallel under
-  `<data-dir>/themes/`. The engine URL, byte size, and SHA-256 digest are pinned
-  in `src/engine/releases.ts`; the download is verified before extraction, and
-  archive paths are checked for traversal. Use `--no-engine-download` to disable
-  both downloads, or `--engine <path>` to replace the engine download.
+  directory, the runtime piece themes (a few MB) in parallel under
+  `<data-dir>/themes/`, and the opening dataset (~410 KB) under
+  `<data-dir>/openings/`. The engine URL, byte size, and SHA-256 digest are pinned
+  in `src/engine/releases.ts`; each opening TSV is pinned the same way in
+  `src/openings/release.ts`. Downloads are verified before use, and archive paths
+  are checked for traversal. Use `--no-engine-download` to disable all three
+  downloads, or `--engine <path>` to replace the engine download.
 - Stockfish runs as a local child process. Only the configured path is executed;
   no part of an HTTP/MCP request can choose the binary.
 - The MCP server has no resources or prompts; all state is returned by tools.

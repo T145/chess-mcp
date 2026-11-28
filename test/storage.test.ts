@@ -1,4 +1,4 @@
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -221,6 +221,59 @@ describe('GameStorage', () => {
       accuracy: { white: 100, black: 100 },
       counts: {
         white: {
+          book: 0,
+          brilliant: 0,
+          great: 0,
+          best: 0,
+          excellent: 0,
+          good: 0,
+          inaccuracy: 0,
+          mistake: 0,
+          blunder: 0,
+          forced: 0
+        },
+        black: {
+          book: 0,
+          brilliant: 0,
+          great: 0,
+          best: 0,
+          excellent: 0,
+          good: 0,
+          inaccuracy: 0,
+          mistake: 0,
+          blunder: 0,
+          forced: 0
+        }
+      },
+      evalGraph: [0],
+      moves: []
+    };
+
+    storage.saveReview(review);
+    expect(storage.loadReview(review.gameId)?.engineName).toBe('Stockfish 19');
+
+    writeFileSync(path.join(dir, 'reviews', `${review.gameId}.json`), '{"version":1}');
+    expect(storage.loadReview(review.gameId)).toBeNull();
+
+    storage.saveReview(review);
+    storage.removeReview(review.gameId);
+    expect(storage.loadReview(review.gameId)).toBeNull();
+  });
+
+  it('loads reviews saved before the book label existed', () => {
+    const dir = tempDir();
+    const storage = new GameStorage(dir);
+    const legacy = {
+      version: 1,
+      gameId: 'legacy01',
+      moveCount: 0,
+      engineName: 'Stockfish 19',
+      depth: 14,
+      createdAt: 1,
+      durationMs: 10,
+      accuracy: { white: 100, black: 100 },
+      counts: {
+        white: {
           brilliant: 0,
           great: 0,
           best: 0,
@@ -247,14 +300,12 @@ describe('GameStorage', () => {
       moves: []
     };
 
-    storage.saveReview(review);
-    expect(storage.loadReview(review.gameId)?.engineName).toBe('Stockfish 19');
+    mkdirSync(path.join(dir, 'reviews'), { recursive: true });
+    writeFileSync(path.join(dir, 'reviews', 'legacy01.json'), JSON.stringify(legacy));
 
-    writeFileSync(path.join(dir, 'reviews', `${review.gameId}.json`), '{"version":1}');
-    expect(storage.loadReview(review.gameId)).toBeNull();
-
-    storage.saveReview(review);
-    storage.removeReview(review.gameId);
-    expect(storage.loadReview(review.gameId)).toBeNull();
+    const loaded = storage.loadReview('legacy01');
+    expect(loaded).not.toBeNull();
+    expect(loaded?.counts.white.book).toBe(0);
+    expect(loaded?.opening).toBeNull();
   });
 });

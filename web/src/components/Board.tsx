@@ -26,6 +26,11 @@ interface BoardProps {
   bestMove?: { from: string; to: string } | null;
   /** Review mode: Chess.com-style badge and square colours for this move. */
   moveQuality?: MoveQuality | null;
+  /**
+   * The book continuation to point at when the played move left theory. Drawn
+   * in the book colour; when both this and `bestMove` are set, this one wins.
+   */
+  bookMove?: { from: string; to: string } | null;
 }
 
 interface PendingPromotion {
@@ -69,6 +74,8 @@ const SQUARE_SIZE = BOARD_VIEWBOX / BOARD_COLUMNS;
 
 /** Chess.com-like green recommendation arrow, in fractions of a square. */
 const ARROW_COLOR = 'rgba(151, 189, 77, 0.92)';
+/** The book badge's brown, reused for the "theory move" arrow. */
+const BOOK_ARROW_COLOR = 'rgba(213, 164, 125, 0.92)';
 const ARROW_START_OFFSET = 0.3;
 const ARROW_TIP_INSET = 0.1;
 const ARROW_HEAD_LENGTH = 0.36;
@@ -196,7 +203,8 @@ export function Board({
   position,
   lastMove: lastMoveOverride,
   bestMove,
-  moveQuality = null
+  moveQuality = null,
+  bookMove = null
 }: BoardProps) {
   const fen = position ?? game.fen;
   const lastMove = lastMoveOverride === undefined ? game.lastMove : lastMoveOverride;
@@ -352,9 +360,11 @@ export function Board({
 
   const promotionColor = chess.turn() === 'w' ? 'white' : 'black';
 
-  // Played moves are shown by the lit from/to squares, so the arrow is reserved
-  // for the engine's recommendation in review mode.
-  const arrowShape = bestMove ? arrowGeometry(orientation, bestMove.from, bestMove.to) : null;
+  // Played moves are shown by the lit from/to squares; the arrow points out
+  // either the engine's recommendation or, after leaving theory, the book move.
+  const arrow = bookMove ?? bestMove;
+  const arrowShape = arrow ? arrowGeometry(orientation, arrow.from, arrow.to) : null;
+  const arrowColor = bookMove ? BOOK_ARROW_COLOR : ARROW_COLOR;
 
   return (
     <div className="board-shell relative">
@@ -401,15 +411,15 @@ export function Board({
           <path
             d={arrowShape.stem}
             fill="none"
-            stroke={ARROW_COLOR}
+            stroke={arrowColor}
             strokeWidth={SQUARE_SIZE * ARROW_STEM_WIDTH}
             strokeLinecap="round"
             strokeLinejoin="round"
           />
           <polygon
             points={arrowShape.head}
-            fill={ARROW_COLOR}
-            stroke={ARROW_COLOR}
+            fill={arrowColor}
+            stroke={arrowColor}
             strokeWidth={SQUARE_SIZE * 0.04}
             strokeLinejoin="round"
           />

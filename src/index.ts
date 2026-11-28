@@ -7,6 +7,7 @@ import express from 'express';
 import type { ViteDevServer } from 'vite';
 
 import { EngineManager } from './engine/manager.js';
+import { OpeningService } from './openings/service.js';
 import { ReviewService } from './review/service.js';
 import { createApp } from './server/app.js';
 import { attachWebSocket, closeWebSocketServer } from './server/ws.js';
@@ -35,7 +36,7 @@ function usage(): string {
     '  --data-dir <dir> Directory for saved games (env: CHESS_MCP_DATA_DIR)',
     '  --engine <path>  Use a local Stockfish binary (env: CHESS_MCP_ENGINE)',
     '  --engine-depth <n>  Analysis depth per position (default: 14)',
-    '  --no-engine-download  Never download Stockfish or runtime theme assets automatically',
+    '  --no-engine-download  Never download Stockfish, piece themes, or opening data automatically',
     '  --dev            Serve the React app with Vite middleware (no build needed)',
     '  -h, --help       Show this help',
     '',
@@ -46,8 +47,9 @@ function usage(): string {
     'The server always binds to 127.0.0.1. Open the printed URL in a browser.',
     'MCP clients connect to http://127.0.0.1:<port>/mcp using Streamable HTTP.',
     '',
-    'When downloads are enabled, Stockfish and the local-only piece themes are',
-    'fetched into the data directory. Use --no-engine-download to disable both.'
+    'When downloads are enabled, Stockfish, the local-only piece themes, and the',
+    'Lichess opening names are fetched into the data directory. Use',
+    '--no-engine-download to disable all three.'
   ].join('\n');
 }
 
@@ -137,6 +139,12 @@ async function main(): Promise<void> {
     log: (message) => console.log(message)
   });
   if (options.engineDownload) void themes.ensureAll();
+  const openings = new OpeningService({
+    dataDir: options.dataDir,
+    enabled: options.engineDownload,
+    log: (message) => console.log(message)
+  });
+  if (options.engineDownload) void openings.ensure();
   const engine = new EngineManager({
     dataDir: options.dataDir,
     explicitPath: options.enginePath,
@@ -150,9 +158,10 @@ async function main(): Promise<void> {
     engine,
     storage: store.storage,
     depth: options.engineDepth,
+    openings,
     log: (message) => console.log(message)
   });
-  const { app, mcpHandler } = createApp(store, { review, themes });
+  const { app, mcpHandler } = createApp(store, { review, themes, openings });
   const server = createHttpServer(app);
   const wss = attachWebSocket(server, store, { allowViteHmr: options.dev, review });
 

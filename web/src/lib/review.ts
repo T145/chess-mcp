@@ -11,6 +11,14 @@ export interface QualityStyle {
 }
 
 export const QUALITY_STYLES: Record<MoveQuality, QualityStyle> = {
+  book: {
+    symbol: '',
+    label: 'Book',
+    className: 'text-[#d5a47d]',
+    badge: 'classification-book.svg',
+    // Chess.com's book badge is #D5A47D; the board uses the same tone at 80%.
+    highlight: 'rgba(213, 164, 125, 0.8)'
+  },
   brilliant: {
     symbol: '!!',
     label: 'Brilliant',

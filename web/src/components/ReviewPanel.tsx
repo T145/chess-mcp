@@ -10,8 +10,10 @@ import type {
 } from '../../../src/shared/protocol';
 import { MOVE_QUALITIES } from '../../../src/shared/protocol';
 import { formatEval, winProbability } from '../../../src/shared/eval';
+import { fenAfterPly, lastBookPly } from '../../../src/shared/openings';
 import { QUALITY_STYLES } from '../lib/review';
 import { MoveBadge } from './MoveBadge';
+import { OpeningLabel } from './OpeningLabel';
 
 interface ReviewPanelProps {
   game: PublicGame;
@@ -233,6 +235,14 @@ export function ReviewPanel({
   const review = state?.review ?? null;
 
   if (review) {
+    const bookPlies = review.moves.map((move) => ({
+      book: move.quality === 'book',
+      opening: move.opening ?? null
+    }));
+    const bookPly = lastBookPly(bookPlies);
+    const openingFen =
+      bookPly === null ? null : fenAfterPly(game.initialFen, game.moves, bookPly);
+
     return (
       <div className="scroll-thin min-h-0 space-y-3 overflow-y-auto p-3 lg:flex-1">
         <div className="grid grid-cols-2 gap-2">
@@ -244,6 +254,12 @@ export function ReviewPanel({
           <QualityCounts review={review} color="white" />
           <QualityCounts review={review} color="black" />
         </div>
+
+        {review.opening && (
+          <p className="rounded-lg border border-line bg-panel-2 px-3 py-2 text-[11px] leading-4">
+            <OpeningLabel opening={review.opening} fen={openingFen} />
+          </p>
+        )}
 
         <EvalGraph review={review} selectedPly={selectedPly} onSelectPly={onSelectPly} />
 

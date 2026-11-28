@@ -6,10 +6,11 @@ import { Chess } from 'chess.js';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import type { EngineSession, PositionEval } from '../src/engine/uci.js';
-import type { ReviewEngine } from '../src/review/service.js';
+import type { ReviewEngine, ReviewBookSource } from '../src/review/service.js';
 import { ReviewService } from '../src/review/service.js';
 import { GameStorage } from '../src/storage.js';
 import { GameStore } from '../src/store.js';
+import { normalizeFen } from '../src/shared/openings.js';
 import type { EngineStatus, ReviewState } from '../src/shared/protocol.js';
 
 const createdDirs: string[] = [];
@@ -192,6 +193,64 @@ describe('ReviewService', () => {
     expect(state.error).toMatch(/unavailable/);
 
     service.dispose();
+    store.dispose();
+  });
+
+  it('re-labels cached reviews once an opening book is available', async () => {
+    const dir = tempDir();
+    const store = new GameStore({ dataDir: dir, autoTick: false });
+    const gameId = finishedGame(store);
+
+    const first = new ReviewService({
+      store,
+      engine: new FakeEngine(),
+      storage: store.storage,
+      autoAnalyze: false
+    });
+    first.start(gameId);
+    await first.waitForCompletion(gameId, 2_000);
+    first.dispose();
+
+    const storage = store.storage;
+    expect(storage).not.toBeNull();
+    const before = storage?.loadReview(gameId);
+    expect(before?.book).toBeNull();
+    expect(before?.moves.some((move) => move.quality === 'book')).toBe(false);
+
+    const snapshot = store.get(gameId).toSnapshot();
+    const chess = new Chess(snapshot.initialFen);
+    const book = new Map<string, { eco: string; name: string } | null>();
+    for (const move of snapshot.moves) {
+      chess.move(move.san);
+      const key = normalizeFen(chess.fen());
+      if (key) book.set(key, { eco: 'B00', name: "King's Pawn Game" });
+    }
+
+    const openings: ReviewBookSource = {
+      waitForBook: () => Promise.resolve(book),
+      loadedBook: () => ({ book, key: 'test-commit' })
+    };
+    const reloaded = new ReviewService({
+      store,
+      engine: new FakeEngine(),
+      storage: store.storage,
+      openings,
+      autoAnalyze: false
+    });
+
+    const state = reloaded.state(gameId);
+    expect(state.phase).toBe('complete');
+    expect(state.review?.book).toBe('test-commit');
+    expect(state.review?.moves.map((move) => move.quality)).toEqual(['book', 'book']);
+    expect(state.review?.moves[0]?.baseQuality).toBeDefined();
+    expect(state.review?.counts.white.book).toBe(1);
+    expect(state.review?.counts.black.book).toBe(1);
+    expect(state.review?.opening).toEqual({ eco: 'B00', name: "King's Pawn Game" });
+
+    // The refreshed labels are persisted, so the next boot reads them as-is.
+    expect(storage?.loadReview(gameId)?.book).toBe('test-commit');
+
+    reloaded.dispose();
     store.dispose();
   });
 

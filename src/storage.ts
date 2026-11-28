@@ -13,6 +13,7 @@ import type {
   MoveQuality,
   MoveRecord,
   MoveReview,
+  OpeningInfo,
   ReviewSummary,
   SeatKind,
   TimeControlCategory
@@ -227,6 +228,18 @@ function isMoveQuality(value: unknown): value is MoveQuality {
   return typeof value === 'string' && (MOVE_QUALITIES as readonly string[]).includes(value);
 }
 
+/**
+ * Tolerant opening parser: absent becomes null (older reviews), but a present
+ * value with the wrong shape invalidates the file.
+ */
+function parseOpeningInfo(value: unknown): OpeningInfo | null | false {
+  if (value === undefined || value === null) return null;
+  if (!isRecord(value)) return false;
+  const { eco, name } = value;
+  if (typeof eco !== 'string' || typeof name !== 'string') return false;
+  return { eco, name };
+}
+
 function parseMoveReview(value: unknown): MoveReview | null {
   if (!isRecord(value)) return null;
   const {
@@ -244,7 +257,9 @@ function parseMoveReview(value: unknown): MoveReview | null {
     bestMoveUci,
     bestMoveSan,
     pv,
-    depth
+    depth,
+    opening,
+    baseQuality
   } = value;
 
   if (!isFiniteNumber(ply) || !Number.isInteger(ply) || ply < 1) return null;
@@ -265,6 +280,10 @@ function parseMoveReview(value: unknown): MoveReview | null {
   if (bestMoveSan !== null && typeof bestMoveSan !== 'string') return null;
   if (!Array.isArray(pv) || !pv.every((entry) => typeof entry === 'string')) return null;
 
+  const parsedOpening = parseOpeningInfo(opening);
+  if (parsedOpening === false) return null;
+  if (baseQuality !== undefined && !isMoveQuality(baseQuality)) return null;
+
   return {
     ply,
     color,
@@ -280,13 +299,16 @@ function parseMoveReview(value: unknown): MoveReview | null {
     bestMoveUci,
     bestMoveSan,
     pv,
-    depth
+    depth,
+    opening: parsedOpening,
+    ...(isMoveQuality(baseQuality) ? { baseQuality } : {})
   };
 }
 
 function parseQualityCounts(value: unknown): Record<MoveQuality, number> | null {
   if (!isRecord(value)) return null;
   const counts: Record<MoveQuality, number> = {
+    book: 0,
     brilliant: 0,
     great: 0,
     best: 0,
@@ -299,6 +321,11 @@ function parseQualityCounts(value: unknown): Record<MoveQuality, number> | null 
   };
   for (const quality of MOVE_QUALITIES) {
     const count = value[quality];
+    // Reviews saved before a label existed simply do not have its key.
+    if (count === undefined) {
+      counts[quality] = 0;
+      continue;
+    }
     if (!isFiniteNumber(count) || count < 0 || !Number.isInteger(count)) return null;
     counts[quality] = count;
   }
@@ -320,7 +347,9 @@ export function parseReviewSummary(value: unknown): ReviewSummary | null {
     accuracy,
     counts,
     evalGraph,
-    moves
+    moves,
+    opening,
+    book
   } = value;
 
   if (version !== 1) return null;
@@ -354,6 +383,10 @@ export function parseReviewSummary(value: unknown): ReviewSummary | null {
   }
   if (parsedMoves.length !== moveCount) return null;
 
+  const parsedOpening = parseOpeningInfo(opening);
+  if (parsedOpening === false) return null;
+  if (book !== undefined && book !== null && typeof book !== 'string') return null;
+
   return {
     version: 1,
     gameId,
@@ -365,7 +398,9 @@ export function parseReviewSummary(value: unknown): ReviewSummary | null {
     accuracy: { white: whiteAccuracy, black: blackAccuracy },
     counts: { white: whiteCounts, black: blackCounts },
     evalGraph,
-    moves: parsedMoves
+    moves: parsedMoves,
+    opening: parsedOpening,
+    book: typeof book === 'string' ? book : null
   };
 }
 

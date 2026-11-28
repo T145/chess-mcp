@@ -3,6 +3,7 @@ import type { PieceSymbol, Square } from 'chess.js';
 
 import { MATE_CP, accuracyFromWinDrop, winProbability } from '../shared/eval.js';
 import { materialBalance } from '../shared/material.js';
+import { bookForFens, deepestOpening, type OpeningBook } from '../shared/openings.js';
 import {
   MOVE_QUALITIES,
   type Color,
@@ -26,6 +27,10 @@ export interface ReviewInput {
   engineName: string;
   depth: number;
   durationMs: number;
+  /** Opening book used to label theory moves; null/absent disables book labels. */
+  book?: OpeningBook | null;
+  /** Identity of that book, recorded on the review so stale labels can be refreshed. */
+  bookKey?: string | null;
   now?: number;
 }
 
@@ -43,8 +48,9 @@ export const REVIEW_THRESHOLDS = {
   brilliantWinFloor: 50
 } as const;
 
-function emptyCounts(): Record<MoveQuality, number> {
+export function emptyCounts(): Record<MoveQuality, number> {
   return {
+    book: 0,
     brilliant: 0,
     great: 0,
     best: 0,
@@ -176,6 +182,7 @@ export function buildReview(input: ReviewInput): ReviewSummary {
   };
   const accuracies: Record<Color, number[]> = { white: [], black: [] };
   const reviews: MoveReview[] = [];
+  const bookPlies = input.book ? bookForFens(fens, input.book) : null;
 
   moves.forEach((move, index) => {
     const fen = fens[index] ?? input.initialFen;
@@ -225,6 +232,14 @@ export function buildReview(input: ReviewInput): ReviewSummary {
     else if (winDrop < REVIEW_THRESHOLDS.mistake) quality = 'mistake';
     else quality = 'blunder';
 
+    // Book moves keep the engine's verdict in `baseQuality` so the label can be
+    // recomputed later (a new dataset, or a dataset that was unavailable).
+    let baseQuality: MoveQuality | undefined;
+    if (bookPlies?.[index]?.book && quality !== 'forced') {
+      baseQuality = quality;
+      quality = 'book';
+    }
+
     counts[move.color][quality] += 1;
     accuracies[move.color].push(accuracy);
 
@@ -243,7 +258,9 @@ export function buildReview(input: ReviewInput): ReviewSummary {
       bestMoveUci,
       bestMoveSan: bestMoveUci ? sanForUci(fen, bestMoveUci) : null,
       pv: bestLine?.pv ?? [],
-      depth: bestLine?.depth ?? analysis?.depth ?? 0
+      depth: bestLine?.depth ?? analysis?.depth ?? 0,
+      opening: bookPlies?.[index]?.opening ?? null,
+      ...(baseQuality ? { baseQuality } : {})
     });
   });
 
@@ -261,7 +278,9 @@ export function buildReview(input: ReviewInput): ReviewSummary {
     },
     counts,
     evalGraph,
-    moves: reviews
+    moves: reviews,
+    opening: bookPlies ? deepestOpening(bookPlies) : null,
+    book: input.bookKey ?? null
   };
 }
 

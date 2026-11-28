@@ -72,6 +72,8 @@ export interface GameStatus {
 
 export interface PublicGame {
   id: string;
+  /** FEN the game started from; used for opening-book matching on the client. */
+  initialFen: string;
   fen: string;
   turn: Color;
   inCheck: boolean;
@@ -88,8 +90,15 @@ export interface PublicGame {
   updatedAt: number;
 }
 
+/** An opening name and its ECO code, as published by the opening-book data. */
+export interface OpeningInfo {
+  eco: string;
+  name: string;
+}
+
 /** Move labels produced by the review engine, best-to-worst display order. */
 export const MOVE_QUALITIES = [
+  'book',
   'brilliant',
   'great',
   'best',
@@ -126,6 +135,13 @@ export interface MoveReview {
   bestMoveSan: string | null;
   pv: string[];
   depth: number;
+  /** Deepest named book position reached by this move, if the game was in book. */
+  opening?: OpeningInfo | null;
+  /**
+   * The engine-derived label that was replaced by "book", so cached reviews can
+   * be re-annotated (or un-booked) without running Stockfish again.
+   */
+  baseQuality?: MoveQuality;
 }
 
 export interface ReviewSummary {
@@ -141,6 +157,14 @@ export interface ReviewSummary {
   /** White-POV centipawn evaluation after 0..n plies (index 0 is the start). */
   evalGraph: number[];
   moves: MoveReview[];
+  /** Deepest opening named by the book, or null when the game left theory early. */
+  opening?: OpeningInfo | null;
+  /**
+   * Identity of the dataset used for book labels (the upstream commit). Absent
+   * on reviews saved before opening detection existed, or null when the book was
+   * unavailable; either way the labels are refreshed once a book is loaded.
+   */
+  book?: string | null;
 }
 
 export type ReviewPhase = 'idle' | 'queued' | 'running' | 'complete' | 'failed';
@@ -156,6 +180,25 @@ export interface ReviewState {
 }
 
 export type EnginePhase = 'available' | 'installing' | 'unavailable' | 'failed';
+
+export type OpeningPhase = 'disabled' | 'idle' | 'downloading' | 'ready' | 'failed';
+
+/** Provenance of the downloaded opening data. */
+export interface OpeningSource {
+  name: string;
+  license: string;
+  licenseUrl: string;
+  sourceUrl: string;
+  commit: string;
+}
+
+export interface OpeningStatus {
+  phase: OpeningPhase;
+  /** Number of positions in the loaded book, 0 until it is ready. */
+  positions: number;
+  source: OpeningSource | null;
+  error: string | null;
+}
 
 export interface EngineDownload {
   receivedBytes: number;

@@ -7,6 +7,7 @@ import type {
   EngineStatus,
   JoinGameResponse,
   MoveInput,
+  OpeningStatus,
   PublicGame,
   ReviewState,
   SwapSeatsResponse
@@ -111,6 +112,22 @@ export const api = {
 
   getThemes(): Promise<ThemeCatalogResponse> {
     return request('/api/themes', { cache: 'no-store' });
+  },
+
+  getOpenings(): Promise<{ openings: OpeningStatus }> {
+    return request('/api/openings', { cache: 'no-store' });
+  },
+
+  /** Raw book text; null while the server is still downloading it. */
+  async getOpeningsBook(): Promise<string | null> {
+    const response = await fetch('/api/openings/book', { cache: 'no-cache' });
+    if (response.status === 503) return null;
+    if (!response.ok) throw new Error(`Request failed (${response.status})`);
+    return response.text();
+  },
+
+  installOpenings(): Promise<{ openings: OpeningStatus }> {
+    return request('/api/openings/install', { method: 'POST' });
   },
 
   installEngine(): Promise<{ engine: EngineStatus }> {

@@ -110,6 +110,7 @@ function plyLabel(ply: number, color: Color): string {
 }
 
 const QUALITY_LABELS = {
+  book: 'book',
   brilliant: 'brilliant',
   great: 'great',
   best: 'best',

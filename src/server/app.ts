@@ -18,6 +18,7 @@ import type {
   EngineStatus,
   JoinSeatRequest,
   MoveRequest,
+  OpeningStatus,
   ResignRequest,
   ReviewState,
   SwapSeatsRequest
@@ -93,6 +94,24 @@ export interface AppBundle {
 export interface AppOptions {
   review?: ReviewService | null;
   themes?: ThemeAssetService | null;
+  openings?: OpeningsRoutes | null;
+}
+
+/** The subset of OpeningService the HTTP API needs (easy to fake in tests). */
+export interface OpeningsRoutes {
+  statusInfo(): OpeningStatus;
+  bookText(): string | null;
+  etag(): string | null;
+  retry(): void;
+}
+
+function unavailableOpeningsStatus(): OpeningStatus {
+  return {
+    phase: 'disabled',
+    positions: 0,
+    source: null,
+    error: 'The opening book is not enabled on this server.'
+  };
 }
 
 function unavailableEngineStatus(): EngineStatus {
@@ -184,6 +203,43 @@ export function createApp(store: GameStore, options: AppOptions = {}): AppBundle
 
   app.get('/api/themes', (_req, res) => {
     res.json(options.themes?.catalog() ?? baseThemeCatalog());
+  });
+
+  app.get('/api/openings', (_req, res) => {
+    res.json({ openings: options.openings?.statusInfo() ?? unavailableOpeningsStatus() });
+  });
+
+  app.get('/api/openings/book', (req, res) => {
+    const text = options.openings?.bookText() ?? null;
+    if (!text) {
+      res.status(503).json({ error: 'The opening book is not ready yet.' });
+      return;
+    }
+
+    const etag = options.openings?.etag() ?? null;
+    if (etag) {
+      res.setHeader('ETag', etag);
+      res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
+      const ifNoneMatch = req.headers['if-none-match'];
+      const candidates =
+        typeof ifNoneMatch === 'string' ? ifNoneMatch.split(',').map((value) => value.trim()) : [];
+      if (candidates.includes(etag)) {
+        res.status(304).end();
+        return;
+      }
+    }
+
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.send(text);
+  });
+
+  app.post('/api/openings/install', (_req, res) => {
+    if (!options.openings) {
+      res.status(503).json({ error: 'The opening book is not enabled on this server.' });
+      return;
+    }
+    options.openings.retry();
+    res.status(202).json({ openings: options.openings.statusInfo() });
   });
 
   app.get('/theme-assets/:themeId/:file', (req, res) => {

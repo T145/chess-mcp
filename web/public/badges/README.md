@@ -13,7 +13,7 @@ by the web app.
 
 ## Included assets
 
-Classification badges (the app currently uses all except `book`, `miss`, and
+Classification badges (the app currently uses all except `miss` and
 `missed-win`):
 
 - `classification-brilliant.svg`

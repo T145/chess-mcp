@@ -4,12 +4,14 @@ import type { EngineSession, PositionEval } from '../engine/uci.js';
 import { UserError } from '../errors.js';
 import type { GameStorage } from '../storage.js';
 import type { GameStore, StoreEvent } from '../store.js';
+import type { OpeningBook, LoadedBook } from '../shared/openings.js';
 import type {
   EngineStatus,
   MoveRecord,
   ReviewState,
   ReviewSummary
 } from '../shared/protocol.js';
+import { annotateWithBook } from './annotate.js';
 import { buildReview } from './classify.js';
 
 /** The subset of EngineManager the review queue needs (easy to fake in tests). */
@@ -25,9 +27,17 @@ export interface ReviewServiceOptions {
   engine: ReviewEngine;
   storage: GameStorage | null;
   depth?: number;
+  /** Opening book source; reviews skip book labels when it is unavailable. */
+  openings?: ReviewBookSource | null;
   /** Start a review when a game finishes in this process. */
   autoAnalyze?: boolean;
   log?: (message: string) => void;
+}
+
+/** The subset of OpeningService the review queue needs. */
+export interface ReviewBookSource {
+  waitForBook(): Promise<OpeningBook | null>;
+  loadedBook(): LoadedBook | null;
 }
 
 type ReviewListener = (gameId: string, state: ReviewState) => void;
@@ -61,6 +71,7 @@ export class ReviewService {
   private readonly store: GameStore;
   private readonly engine: ReviewEngine;
   private readonly storage: GameStorage | null;
+  private readonly openings: ReviewBookSource | null;
   private readonly depth: number;
   private readonly log: (message: string) => void;
   private readonly states = new Map<string, ReviewState>();
@@ -75,6 +86,7 @@ export class ReviewService {
     this.store = options.store;
     this.engine = options.engine;
     this.storage = options.storage;
+    this.openings = options.openings ?? null;
     this.depth = options.depth ?? 14;
     this.log = options.log ?? (() => undefined);
     this.unsubscribeStore =
@@ -108,7 +120,7 @@ export class ReviewService {
 
     const stored = this.storedReview(gameId, game.moveCount);
     if (stored) {
-      const state = completeState(stored);
+      const state = completeState(this.withBookLabels(stored, game.toSnapshot()));
       this.states.set(gameId, state);
       return state;
     }
@@ -141,7 +153,7 @@ export class ReviewService {
 
     const stored = this.storedReview(gameId, game.moveCount);
     if (stored) {
-      const state = completeState(stored);
+      const state = completeState(this.withBookLabels(stored, game.toSnapshot()));
       this.states.set(gameId, state);
       this.emit(state);
       return state;
@@ -208,6 +220,32 @@ export class ReviewService {
     return review;
   }
 
+  /**
+   * A cached review may predate opening detection, or be older than the current
+   * dataset. Re-label it from its stored engine data; no Stockfish run is needed.
+   */
+  private withBookLabels(
+    review: ReviewSummary,
+    game: { initialFen: string; moves: readonly MoveRecord[] }
+  ): ReviewSummary {
+    const loaded = this.openings?.loadedBook() ?? null;
+    if (!loaded || review.book === loaded.key || review.moveCount !== game.moves.length) {
+      return review;
+    }
+
+    const annotated = annotateWithBook({
+      review,
+      initialFen: game.initialFen,
+      moves: game.moves,
+      book: loaded.book,
+      bookKey: loaded.key
+    });
+
+    this.storage?.saveReview(annotated);
+    this.log(`Refreshed opening labels for ${review.gameId}.`);
+    return annotated;
+  }
+
   private onStoreEvent(event: StoreEvent): void {
     if (event.type === 'deleted') {
       this.cancelled.add(event.id);
@@ -222,7 +260,7 @@ export class ReviewService {
 
     const stored = this.storedReview(game.id, game.moves.length);
     if (stored) {
-      const state = completeState(stored);
+      const state = completeState(this.withBookLabels(stored, game));
       this.states.set(game.id, state);
       this.emit(state);
       return;
@@ -273,6 +311,7 @@ export class ReviewService {
 
     const startedAt = Date.now();
     const session = await this.engine.waitForEngine();
+    const book = await this.loadBook();
     const analyses: PositionEval[] = [];
 
     for (const [index, fen] of fens.entries()) {
@@ -295,12 +334,27 @@ export class ReviewService {
       finalStatus: game.currentStatus,
       engineName: session.engineName,
       depth: this.depth,
-      durationMs: Date.now() - startedAt
+      durationMs: Date.now() - startedAt,
+      book: book?.book ?? null,
+      bookKey: book?.key ?? null
     });
 
     this.storage?.saveReview(review);
     this.set(completeState(review));
     this.log(`Review ready for ${gameId} (${review.moveCount} moves).`);
+  }
+
+  /** The book is optional: a failed download must never block a review. */
+  private async loadBook(): Promise<LoadedBook | null> {
+    if (!this.openings) return null;
+    try {
+      await this.openings.waitForBook();
+      return this.openings.loadedBook();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.log(`Opening book unavailable for this review: ${message}`);
+      return null;
+    }
   }
 
   private fail(gameId: string, error: unknown): void {

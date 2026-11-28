@@ -29,18 +29,6 @@ Classification badges (the app currently uses all except `book`, `miss`, and
 - `classification-missed-win.svg`
 - `classification-forced.svg`
 
-`move-*` variants (alternate artwork, not currently referenced by the UI):
-
-- `move-brilliant.svg`
-- `move-best.svg`
-- `move-excellent.svg`
-- `move-good.svg`
-- `move-book.svg`
-- `move-inaccuracy.svg`
-- `move-mistake.svg`
-- `move-blunder.svg`
-- `move-missed-win.svg`
-
 ## Licensing
 
 The badge artwork remains Chess.com's and is not covered by this repository's

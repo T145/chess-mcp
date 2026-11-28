@@ -9,6 +9,8 @@ import * as z from 'zod/v4';
 import { UserError } from '../errors.js';
 import { createMcpServer } from '../mcp.js';
 import type { ReviewService } from '../review/service.js';
+import { baseThemeCatalog } from '../shared/themes.js';
+import type { ThemeAssetService } from '../themes/service.js';
 import type {
   Color,
   CreateGameRequest,
@@ -90,6 +92,7 @@ export interface AppBundle {
 
 export interface AppOptions {
   review?: ReviewService | null;
+  themes?: ThemeAssetService | null;
 }
 
 function unavailableEngineStatus(): EngineStatus {
@@ -177,6 +180,19 @@ export function createApp(store: GameStore, options: AppOptions = {}): AppBundle
 
   app.get('/api/engine', (_req, res) => {
     res.json({ engine: options.review?.engineStatus() ?? unavailableEngineStatus() });
+  });
+
+  app.get('/api/themes', (_req, res) => {
+    res.json(options.themes?.catalog() ?? baseThemeCatalog());
+  });
+
+  app.get('/theme-assets/:themeId/:file', (req, res) => {
+    const file = options.themes?.assetFile(req.params.themeId, req.params.file);
+    if (!file) {
+      res.status(404).json({ error: 'Theme asset not found' });
+      return;
+    }
+    res.sendFile(file);
   });
 
   app.post('/api/engine/install', (_req, res) => {

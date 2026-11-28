@@ -12,6 +12,7 @@ import { createApp } from './server/app.js';
 import { attachWebSocket, closeWebSocketServer } from './server/ws.js';
 import { resolveDataDir } from './storage.js';
 import { GameStore } from './store.js';
+import { ThemeAssetService } from './themes/service.js';
 
 interface CliOptions {
   dev: boolean;
@@ -20,7 +21,7 @@ interface CliOptions {
   /** Explicit Stockfish path; null means auto-detect then download. */
   enginePath: string | null;
   engineDepth: number;
-  /** Allow the automatic Stockfish download when no engine is found. */
+  /** Allow automatic Stockfish and runtime theme downloads when possible. */
   engineDownload: boolean;
   help: boolean;
 }
@@ -34,7 +35,7 @@ function usage(): string {
     '  --data-dir <dir> Directory for saved games (env: CHESS_MCP_DATA_DIR)',
     '  --engine <path>  Use a local Stockfish binary (env: CHESS_MCP_ENGINE)',
     '  --engine-depth <n>  Analysis depth per position (default: 14)',
-    '  --no-engine-download  Never download Stockfish automatically',
+    '  --no-engine-download  Never download Stockfish or runtime theme assets automatically',
     '  --dev            Serve the React app with Vite middleware (no build needed)',
     '  -h, --help       Show this help',
     '',
@@ -45,8 +46,8 @@ function usage(): string {
     'The server always binds to 127.0.0.1. Open the printed URL in a browser.',
     'MCP clients connect to http://127.0.0.1:<port>/mcp using Streamable HTTP.',
     '',
-    'When no Stockfish is found, the official release is downloaded once into',
-    'the data directory so finished games can be reviewed.'
+    'When downloads are enabled, Stockfish and the local-only piece themes are',
+    'fetched into the data directory. Use --no-engine-download to disable both.'
   ].join('\n');
 }
 
@@ -130,11 +131,18 @@ async function main(): Promise<void> {
   }
 
   const store = new GameStore({ dataDir: options.dataDir });
+  const themes = new ThemeAssetService({
+    dataDir: options.dataDir,
+    enabled: options.engineDownload,
+    log: (message) => console.log(message)
+  });
+  if (options.engineDownload) void themes.ensureAll();
   const engine = new EngineManager({
     dataDir: options.dataDir,
     explicitPath: options.enginePath,
     autoInstall: options.engineDownload,
     depth: options.engineDepth,
+    onInstallStart: () => themes.ensureAll(),
     log: (message) => console.log(message)
   });
   const review = new ReviewService({
@@ -144,7 +152,7 @@ async function main(): Promise<void> {
     depth: options.engineDepth,
     log: (message) => console.log(message)
   });
-  const { app, mcpHandler } = createApp(store, { review });
+  const { app, mcpHandler } = createApp(store, { review, themes });
   const server = createHttpServer(app);
   const wss = attachWebSocket(server, store, { allowViteHmr: options.dev, review });
 

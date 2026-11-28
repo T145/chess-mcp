@@ -3,6 +3,8 @@ import { Chessboard, getRelativeCoords } from 'react-chessboard';
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 
 import type { MoveInput, MoveRecord, PublicGame } from '../../../src/shared/protocol';
+import { createPieceRenderers, PieceImage } from '../lib/pieceRenderers';
+import { usePieceTheme } from '../lib/pieceThemes';
 
 interface BoardProps {
   game: PublicGame;
@@ -152,6 +154,8 @@ export function Board({
   const [pendingPromotion, setPendingPromotion] = useState<PendingPromotion | null>(null);
   const promotionDialog = useRef<HTMLDialogElement>(null);
   const [positionFen, setPositionFen] = useState(fen);
+  const pieceTheme = usePieceTheme();
+  const pieces = useMemo(() => createPieceRenderers(pieceTheme), [pieceTheme]);
 
   // Adjust transient UI state during render when the server position changes.
   // This avoids an effect that would cause an extra render pass.
@@ -289,6 +293,8 @@ export function Board({
     onMove({ from, to, promotion });
   };
 
+  const promotionColor = chess.turn() === 'w' ? 'white' : 'black';
+
   // Played moves are shown by the lit from/to squares, so the arrow is reserved
   // for the engine's recommendation in review mode.
   const arrowColor = 'rgba(124, 240, 109, 0.9)';
@@ -300,6 +306,7 @@ export function Board({
         options={{
           position: fen,
           boardOrientation: orientation,
+          pieces,
           allowDragging: canMove && !pendingPromotion,
           canDragPiece: ({ piece }) =>
             canMove && !pendingPromotion && piece.pieceType.startsWith(chess.turn()),
@@ -349,11 +356,16 @@ export function Board({
             <button
               key={piece}
               type="button"
-              className="btn btn-secondary h-14 text-2xl uppercase"
+              className="btn btn-secondary flex h-14 items-center justify-center"
               onClick={() => playPromotion(piece)}
               aria-label={`Promote to ${piece}`}
             >
-              {piece}
+              <PieceImage
+                theme={pieceTheme}
+                color={promotionColor}
+                kind={piece}
+                className="h-10 w-10"
+              />
             </button>
           ))}
         </div>

@@ -21,6 +21,8 @@ export interface EngineManagerOptions {
   probe?: (command: string) => Promise<{ name: string } | null>;
   createSession?: (command: string) => Promise<EngineSession>;
   installer?: EngineInstaller | null;
+  /** Called when a managed Stockfish install begins, e.g. to warm theme assets. */
+  onInstallStart?: () => void | Promise<void>;
   /** Tests pass false and call start() themselves. */
   autoStart?: boolean;
 }
@@ -49,6 +51,7 @@ export class EngineManager {
   private readonly probe: (command: string) => Promise<{ name: string } | null>;
   private readonly createSession: (command: string) => Promise<EngineSession>;
   private readonly installer: EngineInstaller | null;
+  private readonly onInstallStart: (() => void | Promise<void>) | undefined;
   private readonly log: (message: string) => void;
   private readonly listeners = new Set<(status: EngineStatus) => void>();
   private state: EngineStatus;
@@ -66,6 +69,7 @@ export class EngineManager {
     this.state = initialState(this.depth);
     this.probe = options.probe ?? ((command) => probeEngine(command));
     this.createSession = options.createSession ?? ((command) => UciEngine.start(command));
+    this.onInstallStart = options.onInstallStart;
 
     this.candidates = engineCandidates({
       explicitPath: options.explicitPath ?? null,
@@ -165,7 +169,16 @@ export class EngineManager {
             download: { receivedBytes: 0, totalBytes: this.installer.asset?.bytes ?? 0, percent: null },
             error: null
           });
+          const hook = (async () => {
+            try {
+              await this.onInstallStart?.();
+            } catch (error) {
+              const message = error instanceof Error ? error.message : String(error);
+              this.log(`Install hook failed: ${message}`);
+            }
+          })();
           const result = await this.installer.install();
+          void hook;
           return await this.activate(result.path, result.name, true);
         }
       }

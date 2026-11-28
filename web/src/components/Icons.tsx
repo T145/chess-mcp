@@ -40,6 +40,25 @@ export function FlipIcon(props: IconProps) {
   );
 }
 
+export function PaletteIcon(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M12 3a9 9 0 0 0 0 18h1.4a2.3 2.3 0 0 0 .6-4.5 1.9 1.9 0 0 1 1.5-3.7H18a3.5 3.5 0 0 0 3.5-3.5C21.5 6 17.2 3 12 3Z" />
+      <circle cx="7.5" cy="11" r="1" fill="currentColor" stroke="none" />
+      <circle cx="10" cy="7.5" r="1" fill="currentColor" stroke="none" />
+      <circle cx="14.5" cy="7" r="1" fill="currentColor" stroke="none" />
+    </svg>
+  );
+}
+
+export function CloseIcon(props: IconProps) {
+  return (
+    <svg {...base(props)}>
+      <path d="M6 6l12 12M18 6 6 18" />
+    </svg>
+  );
+}
+
 export function SwapIcon(props: IconProps) {
   return (
     <svg {...base(props)}>

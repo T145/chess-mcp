@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
 
 import { GameView } from './components/GameView';
-import { PlusIcon, WifiIcon, WifiOffIcon } from './components/Icons';
+import { PaletteIcon, PlusIcon, WifiIcon, WifiOffIcon } from './components/Icons';
 import { Lobby } from './components/Lobby';
 import { NewGameDialog } from './components/NewGameDialog';
+import { ThemeDialog } from './components/ThemeDialog';
 import { BRAND_MARK } from './lib/brand';
 import { startLive, useLive } from './lib/live';
 import { Link, usePathname } from './lib/router';
@@ -12,6 +13,7 @@ export function App() {
   const pathname = usePathname();
   const { connected } = useLive();
   const [newGameOpen, setNewGameOpen] = useState(false);
+  const [themeOpen, setThemeOpen] = useState(false);
 
   useEffect(() => {
     startLive();
@@ -52,6 +54,16 @@ export function App() {
           </span>
 
           <div className="ml-auto flex items-center gap-2">
+            <button
+              type="button"
+              className="btn btn-ghost px-2.5 py-1.5 text-xs sm:px-3"
+              onClick={() => setThemeOpen(true)}
+              title="Piece theme"
+              aria-label="Piece theme"
+            >
+              <PaletteIcon className="h-4 w-4" />
+              <span className="hidden sm:inline">Theme</span>
+            </button>
             <Link to="/" className="btn btn-ghost hidden px-3 py-1.5 text-xs sm:inline-flex">
               Lobby
             </Link>
@@ -87,6 +99,7 @@ export function App() {
       )}
 
       {newGameOpen && <NewGameDialog open onClose={() => setNewGameOpen(false)} />}
+      {themeOpen && <ThemeDialog open onClose={() => setThemeOpen(false)} />}
     </div>
   );
 }

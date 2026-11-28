@@ -202,6 +202,12 @@ a {
   transform: translateY(0) scale(1);
 }
 
+.dialog-panel-scroll {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
 .dialog-panel::backdrop {
   background: rgba(4, 7, 10, 0.72);
   backdrop-filter: blur(3px);

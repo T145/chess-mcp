@@ -1,12 +1,9 @@
 import type { Color, PublicGame, TimeControlCategory } from '../../../src/shared/protocol';
 import type { MaterialPiece } from '../../../src/shared/material';
 import { formatClockTime } from '../../../src/shared/timeControl';
+import { PieceImage } from '../lib/pieceRenderers';
+import { usePieceTheme } from '../lib/pieceThemes';
 import { seatKindLabel, seatLabel } from '../lib/status';
-
-const PIECE_GLYPHS: Record<Color, Record<MaterialPiece, string>> = {
-  white: { q: '♕', r: '♖', b: '♗', n: '♘', p: '♙' },
-  black: { q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' }
-};
 
 const PIECE_NAMES: Record<MaterialPiece, string> = {
   q: 'queen',
@@ -61,6 +58,7 @@ export function PlayerCard({
   isYou
 }: PlayerCardProps) {
   const seat = game.seats[color];
+  const theme = usePieceTheme();
   const initial = seatLabel(seat).charAt(0).toUpperCase();
   const chipClass =
     seat.kind === 'llm' ? 'chip chip-llm' : seat.kind === 'open' ? 'chip chip-open' : 'chip';
@@ -106,15 +104,13 @@ export function PlayerCard({
           title={label ?? undefined}
         >
           {capturedGlyphs(captured).map(({ key, piece }) => (
-            <span
+            <PieceImage
               key={key}
-              className={`leading-none ${
-                capturedColor === 'white' ? 'text-slate-100' : 'text-slate-400'
-              }`}
-              aria-hidden
-            >
-              {PIECE_GLYPHS[capturedColor][piece]}
-            </span>
+              theme={theme}
+              color={capturedColor}
+              kind={piece}
+              className="h-3.5 w-3.5"
+            />
           ))}
           {advantage > 0 && (
             <span

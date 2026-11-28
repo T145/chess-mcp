@@ -42,7 +42,7 @@ chess-mcp [options]
 --data-dir <dir>  Directory for saved games and the engine (env: CHESS_MCP_DATA_DIR)
 --engine <path>   Use a local Stockfish binary (env: CHESS_MCP_ENGINE)
 --engine-depth <n>  Analysis depth per position (default: 14)
---no-engine-download  Never download Stockfish automatically
+--no-engine-download  Never download Stockfish or runtime theme assets automatically
 --dev             Serve the React app with Vite middleware (HMR, no build)
 -h, --help        Show help
 ```
@@ -68,6 +68,29 @@ Override the location with `--data-dir <path>` or the `CHESS_MCP_DATA_DIR`
 environment variable. Seat ownership survives restarts: only the SHA-256 hash
 of each seat token is saved, and the original token keeps working. Deleting a
 game removes its saved file.
+
+### Piece themes
+
+The header **Theme** button switches the piece set on every board and remembers the
+choice in `localStorage`. **Default** uses react-chessboard's built-in Cburnett pieces
+(CC BY-SA 3.0, via Wikimedia Commons).
+
+Theme management is centralized in `src/shared/themes.ts`, which defines the
+built-in theme plus 51 runtime sets: 10 permissively licensed Lichess sets, 40
+Chess.com sets, and Neo Angle. The picker loads `/api/themes` and polls while
+open, so server-managed sets appear as they become available.
+
+All non-default sets are downloaded at runtime into
+`<data-dir>/themes/<theme-id>/` and served from `/theme-assets/...`. The download
+starts with the server when automatic downloads are enabled and runs alongside
+the Stockfish install hook. Passing `--no-engine-download` disables both
+Stockfish and theme downloads.
+
+The Lichess sets use Apache-2.0, CC0-1.0, CC BY 4.0, CC BY-SA 4.0, or MIT; the
+Chess.com and Neo Angle sets are local-only and labelled “All rights reserved”.
+Each catalog entry carries its author, license, and source URL, which the picker
+displays. `Classic` is excluded because it duplicates Default; `Icy Sea` is
+excluded because its CDN files are white silhouette/mask images.
 
 ## Play against an LLM
 
@@ -192,7 +215,8 @@ that detects AVX2/AVX-512 etc. itself). Downloads are pinned to the release asse
 name, byte size, and SHA-256 digest, verified before the binary is extracted and
 run. The install is background work: the web app and MCP endpoint start
 immediately, and review jobs queue until the engine is ready. Pass
-`--no-engine-download` to disable this and use `--engine` for a local build.
+`--no-engine-download` to disable both the engine and local theme downloads, and
+use `--engine` for a local build.
 
 The engine is GPL-3.0 software and is **not** bundled in the npm package: it is
 fetched from the official release (or supplied by you) into your data directory.
@@ -240,6 +264,8 @@ Legal moves (20): a6, a5, ...
 | Method + path | Purpose |
 | --- | --- |
 | `GET /api/health` | Health and active game count |
+| `GET /api/themes` | Theme catalog plus local asset download status |
+| `GET /theme-assets/:themeId/:file` | Runtime theme piece images (`wK.svg` or `wK.png`) |
 | `GET /api/games` | Public game list |
 | `POST /api/games` | Create a game (`name`, `color`: white, black, random, or none; optional `timeControl` preset id) |
 | `GET /api/games/:id` | Public game state |
@@ -393,10 +419,11 @@ checked in a headless browser, including a live WebSocket move update.
 - Saved games and reviews live in the current user's profile (see
   [Saved games](#saved-games)); the server does not encrypt them.
 - The first run downloads the official Stockfish release (~80 MB) into the data
-  directory. The URL, byte size, and SHA-256 digest are pinned in
-  `src/engine/releases.ts`; the download is verified before extraction, and
-  archive paths are checked for traversal. Use `--no-engine-download` or
-  `--engine <path>` to avoid or replace the download.
+  directory, and the runtime piece themes (a few MB) in parallel under
+  `<data-dir>/themes/`. The engine URL, byte size, and SHA-256 digest are pinned
+  in `src/engine/releases.ts`; the download is verified before extraction, and
+  archive paths are checked for traversal. Use `--no-engine-download` to disable
+  both downloads, or `--engine <path>` to replace the engine download.
 - Stockfish runs as a local child process. Only the configured path is executed;
   no part of an HTTP/MCP request can choose the binary.
 - The MCP server has no resources or prompts; all state is returned by tools.

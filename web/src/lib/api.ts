@@ -1,3 +1,4 @@
+import type { ThemeCatalogResponse } from '../../../src/shared/themes';
 import type {
   Color,
   CreateGameColor,
@@ -23,7 +24,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   const text = await response.text();
-  let data: unknown = null;
+  let data = null;
   if (text) {
     try {
       data = JSON.parse(text);
@@ -40,8 +41,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(message);
   }
 
-  // oxlint-disable-next-line typescript/no-unsafe-type-assertion -- responses are produced by this app's own typed API
-  return data as T;
+  return data;
 }
 
 export const api = {
@@ -107,6 +107,10 @@ export const api = {
 
   getEngine(): Promise<{ engine: EngineStatus }> {
     return request('/api/engine');
+  },
+
+  getThemes(): Promise<ThemeCatalogResponse> {
+    return request('/api/themes', { cache: 'no-store' });
   },
 
   installEngine(): Promise<{ engine: EngineStatus }> {
